@@ -2,7 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const distDir = path.resolve('dist');
-const html = fs.readFileSync(path.join(distDir, 'index.html'), 'utf8');
+const builtHtmlPath = fs.existsSync(path.join(distDir, 'index.template.html'))
+  ? path.join(distDir, 'index.template.html')
+  : path.join(distDir, 'index.html');
+
+const html = fs.readFileSync(builtHtmlPath, 'utf8');
 
 const inlined = html
   .replace(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"[^>]*>/g, (_, href) => {
