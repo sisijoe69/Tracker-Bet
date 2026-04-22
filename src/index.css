@@ -1,0 +1,24 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:#0A0A0B;color:#FAFAF9;font-family:'Geist',-apple-system,BlinkMacSystemFont,sans-serif;-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+#root{min-height:100vh;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+.serif{font-family:'Instrument Serif',Georgia,serif;font-weight:400;letter-spacing:-.02em}
+.mono{font-family:'JetBrains Mono',monospace;font-feature-settings:'tnum'}
+.card{background:#141416;border:1px solid #222226;border-radius:12px}
+.card-elevated{background:#1C1C1F;border:1px solid #2A2A2F;border-radius:12px}
+.btn-primary{background:#D4A574;color:#0A0A0B;border:none;padding:12px 20px;border-radius:8px;font-weight:600;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s;font-family:inherit}
+.btn-primary:hover{background:#E0B685}
+.btn-primary:active{transform:scale(.98)}
+.btn-ghost{background:transparent;color:#A1A1AA;border:1px solid #2A2A2F;padding:10px 16px;border-radius:8px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s;font-family:inherit}
+.btn-ghost:hover{color:#FAFAF9;border-color:#3A3A3F}
+.input{background:#0A0A0B;border:1px solid #2A2A2F;color:#FAFAF9;padding:10px 12px;border-radius:8px;font-size:14px;width:100%;font-family:inherit;outline:none;transition:border-color .15s}
+.input:focus{border-color:#D4A574}
+.label{font-size:11px;color:#71717A;text-transform:uppercase;letter-spacing:.1em;font-weight:500;margin-bottom:6px;display:block}
+.nav-item{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 12px;color:#71717A;cursor:pointer;font-size:11px;transition:color .15s;border-radius:8px;flex:1}
+.nav-item.active{color:#D4A574}
+.nav-item:hover{color:#FAFAF9}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{animation:fadeIn .3s ease-out}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}
