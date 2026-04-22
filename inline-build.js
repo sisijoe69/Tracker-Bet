@@ -8,6 +8,8 @@ const builtHtmlPath = fs.existsSync(path.join(distDir, 'index.template.html'))
 
 const html = fs.readFileSync(builtHtmlPath, 'utf8');
 
+let inlinedScript = '';
+
 const inlined = html
   .replace(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"[^>]*>/g, (_, href) => {
     const cssPath = path.join(distDir, href.replace(/^\.?\//, ''));
@@ -16,10 +18,11 @@ const inlined = html
   })
   .replace(/<script[^>]+type="module"[^>]+src="([^"]+)"[^>]*><\/script>/g, (_, src) => {
     const jsPath = path.join(distDir, src.replace(/^\.?\//, ''));
-    const js = fs.readFileSync(jsPath, 'utf8');
-    return `<script>${js}</script>`;
+    inlinedScript = fs.readFileSync(jsPath, 'utf8');
+    return '';
   })
-  .replace(/<link[^>]+rel="modulepreload"[^>]*>/g, '');
+  .replace(/<link[^>]+rel="modulepreload"[^>]*>/g, '')
+  .replace(/<\/body>/, () => `<script>${inlinedScript}</script>\n</body>`);
 
 fs.writeFileSync(path.resolve('index.html'), inlined);
 console.log(`Inlined index.html written (${(inlined.length / 1024).toFixed(1)} KB)`);
