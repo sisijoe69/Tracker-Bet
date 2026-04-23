@@ -242,9 +242,10 @@ export function SettingsView({ data, onUpdate, onReset, onExport, onImport }) {
   );
 }
 
-export function CalendarView({ bets, currency }) {
+export function CalendarView({ bets, currency, onUpdate, onDelete, onEdit }) {
   const today = new Date();
   const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() });
+  const [selectedDate, setSelectedDate] = useState(null);
 
   const dailyPnL = useMemo(() => {
     const map = {};
@@ -328,14 +329,21 @@ export function CalendarView({ bets, currency }) {
             }
             if (isToday) border = '1px solid #D4A574';
             return (
-              <div key={idx} style={{ aspectRatio: '1', background: bg, border, borderRadius: 8, padding: 4, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', overflow: 'hidden' }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: entry ? '#FAFAF9' : '#71717A', textAlign: 'right' }}>{day}</div>
+              <button
+                key={idx}
+                onClick={() => setSelectedDate(key)}
+                style={{ aspectRatio: '1', background: bg, border, borderRadius: 8, padding: 4, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', overflow: 'hidden', cursor: 'pointer', fontFamily: 'inherit', transition: 'transform .1s' }}
+                onMouseDown={e => e.currentTarget.style.transform = 'scale(.95)'}
+                onMouseUp={e => e.currentTarget.style.transform = ''}
+                onMouseLeave={e => e.currentTarget.style.transform = ''}
+              >
+                <div style={{ fontSize: 11, fontWeight: 600, color: entry ? '#FAFAF9' : '#71717A', textAlign: 'right', width: '100%' }}>{day}</div>
                 {entry && (
-                  <div className="mono" style={{ fontSize: 10, fontWeight: 700, color: pnlColor, textAlign: 'center', lineHeight: 1.1 }}>
+                  <div className="mono" style={{ fontSize: 10, fontWeight: 700, color: pnlColor, textAlign: 'center', lineHeight: 1.1, width: '100%' }}>
                     {entry.pnl >= 0 ? '+' : ''}{entry.pnl.toFixed(Math.abs(entry.pnl) >= 100 ? 0 : 1)}
                   </div>
                 )}
-              </div>
+              </button>
             );
           })}
         </div>
@@ -362,6 +370,72 @@ export function CalendarView({ bets, currency }) {
             <div style={{ fontSize: 10, color: '#71717A', marginTop: 2, textTransform: 'uppercase', letterSpacing: '.05em' }}>Paris</div>
           </div>
         </div>
+      </div>
+
+      {selectedDate && (
+        <DayBetsModal
+          date={selectedDate}
+          bets={bets.filter(b => b.date === selectedDate)}
+          currency={currency}
+          onClose={() => setSelectedDate(null)}
+          onUpdate={onUpdate}
+          onDelete={onDelete}
+          onEdit={(bet) => { setSelectedDate(null); onEdit?.(bet); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function DayBetsModal({ date, bets, currency, onClose, onUpdate, onDelete, onEdit }) {
+  const d = new Date(date + 'T00:00:00');
+  const label = d.toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const labelCap = label.charAt(0).toUpperCase() + label.slice(1);
+  const dayPnL = bets.reduce((s, b) => s + calcProfit(b.stake, b.odds, b.status), 0);
+  const settled = bets.filter(b => b.status === 'won' || b.status === 'lost');
+  const wins = bets.filter(b => b.status === 'won').length;
+  const losses = bets.filter(b => b.status === 'lost').length;
+  const pending = bets.filter(b => b.status === 'pending').length;
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', backdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: '#141416', borderTop: '1px solid #2A2A2F', width: '100%', maxWidth: 600, maxHeight: '85vh', overflowY: 'auto', borderRadius: '20px 20px 0 0', padding: 24, paddingBottom: 'max(24px,env(safe-area-inset-bottom))' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 11, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 600, marginBottom: 4 }}>Journée</div>
+            <h2 className="serif" style={{ fontSize: 22, margin: 0 }}>{labelCap}</h2>
+          </div>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#71717A', cursor: 'pointer', fontSize: 22, padding: 0, lineHeight: 1 }}>✕</button>
+        </div>
+
+        {bets.length > 0 ? (
+          <>
+            <div className="card-elevated" style={{ padding: 14, marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                <span style={{ fontSize: 11, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 600 }}>P&L du jour</span>
+                <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: dayPnL > 0 ? '#4ADE80' : dayPnL < 0 ? '#F87171' : '#A1A1AA' }}>
+                  {dayPnL >= 0 ? '+' : ''}{dayPnL.toFixed(2)} {currency}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#A1A1AA' }}>
+                <span>{bets.length} pari{bets.length > 1 ? 's' : ''}</span>
+                {settled.length > 0 && <span>· {wins}W-{losses}L</span>}
+                {pending > 0 && <span>· {pending} en attente</span>}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {bets.map(b => (
+                <BetCard key={b.id} bet={b} currency={currency} onUpdate={onUpdate} onDelete={onDelete} onEdit={onEdit} />
+              ))}
+            </div>
+          </>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#71717A' }}>
+            <div style={{ fontSize: 40, opacity: 0.3, marginBottom: 8 }}>📭</div>
+            <p style={{ margin: 0, fontSize: 14 }}>Aucun pari ce jour.</p>
+          </div>
+        )}
       </div>
     </div>
   );

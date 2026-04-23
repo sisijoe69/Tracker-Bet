@@ -238,7 +238,13 @@ export default function App() {
         )}
 
         {view === 'calendar' && (
-          <CalendarView bets={data.bets} currency={c} />
+          <CalendarView
+            bets={data.bets}
+            currency={c}
+            onUpdate={updateBetStatus}
+            onDelete={deleteBet}
+            onEdit={(bet) => { setEditingBet(bet); setShowAddBet(true); }}
+          />
         )}
 
         {view === 'settings' && (
