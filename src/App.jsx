@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Plus, Target, Settings as SettingsIcon, List, Home, AlertCircle } from 'lucide-react';
+import { Plus, Target, Settings as SettingsIcon, List, Home, AlertCircle, Calendar } from 'lucide-react';
 import {
   STORAGE_KEY, DEFAULT_DATA, SPORT_LEAGUES, BET_TYPES,
   fetchESPNGames, calcParlayOdds, calcProfit, oddsToImplied, formatOdds, loadInitialData,
 } from './utils.js';
-import { StatCard, HistoryView, SettingsView, renderGames } from './components.jsx';
+import { StatCard, HistoryView, SettingsView, CalendarView, renderGames } from './components.jsx';
 
 export default function App() {
   const [data, setData] = useState(loadInitialData);
@@ -237,6 +237,10 @@ export default function App() {
           <HistoryView bets={data.bets} currency={c} onUpdate={updateBetStatus} onDelete={deleteBet} onEdit={(bet) => { setEditingBet(bet); setShowAddBet(true); }} />
         )}
 
+        {view === 'calendar' && (
+          <CalendarView bets={data.bets} currency={c} />
+        )}
+
         {view === 'settings' && (
           <SettingsView data={data} onUpdate={updateSettings} onReset={resetAll} onExport={exportData} onImport={importData} />
         )}
@@ -269,6 +273,10 @@ export default function App() {
         <div className={`nav-item ${view === 'history' ? 'active' : ''}`} onClick={() => setView('history')}>
           <List size={20} />
           <span>Historique</span>
+        </div>
+        <div className={`nav-item ${view === 'calendar' ? 'active' : ''}`} onClick={() => setView('calendar')}>
+          <Calendar size={20} />
+          <span>Calendrier</span>
         </div>
         <div className={`nav-item ${view === 'settings' ? 'active' : ''}`} onClick={() => setView('settings')}>
           <SettingsIcon size={20} />

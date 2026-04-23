@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Download } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { calcProfit, formatOdds } from './utils.js';
 
 export function StatCard({ label, value, accent }) {
@@ -236,6 +236,131 @@ export function SettingsView({ data, onUpdate, onReset, onExport, onImport }) {
             <li>Break-even = 52,4% à -110</li>
             <li>Parier ce que tu peux te permettre de perdre</li>
           </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function CalendarView({ bets, currency }) {
+  const today = new Date();
+  const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() });
+
+  const dailyPnL = useMemo(() => {
+    const map = {};
+    bets.forEach(b => {
+      if (b.status === 'pending') return;
+      const profit = calcProfit(b.stake, b.odds, b.status);
+      const key = b.date;
+      if (!map[key]) map[key] = { pnl: 0, count: 0 };
+      map[key].pnl += profit;
+      map[key].count += 1;
+    });
+    return map;
+  }, [bets]);
+
+  const firstDay = new Date(cursor.year, cursor.month, 1);
+  const daysInMonth = new Date(cursor.year, cursor.month + 1, 0).getDate();
+  const startWeekday = firstDay.getDay();
+  const offset = (startWeekday + 6) % 7;
+
+  const cells = [];
+  for (let i = 0; i < offset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const monthLabel = firstDay.toLocaleDateString('fr-CA', { month: 'long', year: 'numeric' });
+  const monthLabelCap = monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
+
+  const prevMonth = () => setCursor(c => c.month === 0 ? { year: c.year - 1, month: 11 } : { ...c, month: c.month - 1 });
+  const nextMonth = () => setCursor(c => c.month === 11 ? { year: c.year + 1, month: 0 } : { ...c, month: c.month + 1 });
+  const goToday = () => setCursor({ year: today.getFullYear(), month: today.getMonth() });
+
+  const monthStats = Object.entries(dailyPnL).reduce((acc, [k, v]) => {
+    const [y, m] = k.split('-').map(Number);
+    if (y === cursor.year && m - 1 === cursor.month) {
+      acc.total += v.pnl;
+      acc.bets += v.count;
+      if (v.pnl > 0) acc.greenDays += 1;
+      else if (v.pnl < 0) acc.redDays += 1;
+    }
+    return acc;
+  }, { total: 0, bets: 0, greenDays: 0, redDays: 0 });
+
+  const dayHeaders = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+  const navBtn = { background: 'transparent', border: '1px solid #2A2A2F', color: '#A1A1AA', width: 36, height: 36, borderRadius: 8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
+
+  return (
+    <div className="fade-in">
+      <h2 className="serif" style={{ margin: '0 0 16px 0', fontSize: 28 }}>Calendrier</h2>
+
+      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <button onClick={prevMonth} style={navBtn} aria-label="Mois précédent"><ChevronLeft size={18} /></button>
+          <div style={{ textAlign: 'center' }}>
+            <div className="serif" style={{ fontSize: 20 }}>{monthLabelCap}</div>
+            <button onClick={goToday} style={{ background: 'transparent', border: 'none', color: '#D4A574', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 700, marginTop: 2 }}>Aujourd'hui</button>
+          </div>
+          <button onClick={nextMonth} style={navBtn} aria-label="Mois suivant"><ChevronRight size={18} /></button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 6 }}>
+          {dayHeaders.map((d, i) => (
+            <div key={i} style={{ textAlign: 'center', fontSize: 10, color: '#71717A', fontWeight: 600, letterSpacing: '.1em', padding: '4px 0' }}>{d}</div>
+          ))}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+          {cells.map((day, idx) => {
+            if (day === null) return <div key={idx} style={{ aspectRatio: '1', background: 'transparent' }} />;
+            const key = `${cursor.year}-${String(cursor.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const entry = dailyPnL[key];
+            const isToday = key === todayKey;
+            let bg = '#141416';
+            let border = '1px solid #222226';
+            let pnlColor = '#52525B';
+            if (entry) {
+              if (entry.pnl > 0) { bg = 'rgba(74,222,128,0.12)'; border = '1px solid rgba(74,222,128,0.35)'; pnlColor = '#4ADE80'; }
+              else if (entry.pnl < 0) { bg = 'rgba(248,113,113,0.12)'; border = '1px solid rgba(248,113,113,0.35)'; pnlColor = '#F87171'; }
+              else { bg = '#1C1C1F'; border = '1px solid #2A2A2F'; pnlColor = '#A1A1AA'; }
+            }
+            if (isToday) border = '1px solid #D4A574';
+            return (
+              <div key={idx} style={{ aspectRatio: '1', background: bg, border, borderRadius: 8, padding: 4, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', overflow: 'hidden' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: entry ? '#FAFAF9' : '#71717A', textAlign: 'right' }}>{day}</div>
+                {entry && (
+                  <div className="mono" style={{ fontSize: 10, fontWeight: 700, color: pnlColor, textAlign: 'center', lineHeight: 1.1 }}>
+                    {entry.pnl >= 0 ? '+' : ''}{entry.pnl.toFixed(Math.abs(entry.pnl) >= 100 ? 0 : 1)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+          <span style={{ fontSize: 11, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 600 }}>Bilan du mois</span>
+          <span className="mono" style={{ fontSize: 20, fontWeight: 700, color: monthStats.total >= 0 ? '#4ADE80' : '#F87171' }}>
+            {monthStats.total >= 0 ? '+' : ''}{monthStats.total.toFixed(2)} {currency}
+          </span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+          <div style={{ padding: 10, background: '#0A0A0B', border: '1px solid #2A2A2F', borderRadius: 8, textAlign: 'center' }}>
+            <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: '#4ADE80' }}>{monthStats.greenDays}</div>
+            <div style={{ fontSize: 10, color: '#71717A', marginTop: 2, textTransform: 'uppercase', letterSpacing: '.05em' }}>Jours +</div>
+          </div>
+          <div style={{ padding: 10, background: '#0A0A0B', border: '1px solid #2A2A2F', borderRadius: 8, textAlign: 'center' }}>
+            <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: '#F87171' }}>{monthStats.redDays}</div>
+            <div style={{ fontSize: 10, color: '#71717A', marginTop: 2, textTransform: 'uppercase', letterSpacing: '.05em' }}>Jours −</div>
+          </div>
+          <div style={{ padding: 10, background: '#0A0A0B', border: '1px solid #2A2A2F', borderRadius: 8, textAlign: 'center' }}>
+            <div className="mono" style={{ fontSize: 16, fontWeight: 700, color: '#FAFAF9' }}>{monthStats.bets}</div>
+            <div style={{ fontSize: 10, color: '#71717A', marginTop: 2, textTransform: 'uppercase', letterSpacing: '.05em' }}>Paris</div>
+          </div>
         </div>
       </div>
     </div>
