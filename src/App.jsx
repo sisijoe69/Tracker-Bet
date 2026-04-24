@@ -4,6 +4,7 @@ import { Plus, Target, Settings as SettingsIcon, List, Home, AlertCircle, Calend
 import {
   STORAGE_KEY, DEFAULT_DATA, SPORT_LEAGUES, BET_TYPES,
   fetchESPNGames, calcParlayOdds, calcProfit, oddsToImplied, formatOdds, loadInitialData,
+  localDateString, parseLocalDate,
 } from './utils.js';
 import { StatCard, HistoryView, SettingsView, CalendarView, renderGames } from './components.jsx';
 
@@ -41,13 +42,13 @@ export default function App() {
   const chartData = useMemo(() => {
     const sorted = [...data.bets]
       .filter(b => b.status !== 'pending')
-      .sort((a, b) => new Date(a.date) - new Date(b.date));
+      .sort((a, b) => parseLocalDate(a.date) - parseLocalDate(b.date));
     let running = data.settings.initialBankroll;
     const points = [{ date: 'Départ', bankroll: running, idx: 0 }];
     sorted.forEach((b, i) => {
       running += calcProfit(b.stake, b.odds, b.status);
       points.push({
-        date: new Date(b.date).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }),
+        date: parseLocalDate(b.date).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' }),
         bankroll: Math.round(running * 100) / 100,
         idx: i + 1,
       });
@@ -108,7 +109,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `bet-tracker-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `bet-tracker-${localDateString()}.json`;
     a.click();
   };
 
@@ -320,7 +321,7 @@ function AddBetModal({ onAdd, onClose, unitSize, currency, editingBet }) {
       };
     }
     return {
-      date: new Date().toISOString().split('T')[0],
+      date: localDateString(),
       sport: 'MLB',
       match: '',
       description: '',

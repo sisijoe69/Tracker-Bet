@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Download, ChevronLeft, ChevronRight } from 'lucide-react';
-import { calcProfit, formatOdds } from './utils.js';
+import { calcProfit, formatOdds, parseLocalDate } from './utils.js';
 
 export function StatCard({ label, value, accent }) {
   const colors = { green: '#4ADE80', red: '#F87171', gold: '#D4A574', neutral: '#FAFAF9' };
@@ -68,7 +68,7 @@ export function BetCard({ bet, currency, onUpdate, onDelete, onEdit }) {
                 {isParlay ? '🎯 PARLAY' : bet.sport}
               </span>
               <span style={{ fontSize: 11, color: '#71717A' }}>
-                {new Date(bet.date).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}
+                {parseLocalDate(bet.date).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}
               </span>
             </div>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>{bet.description}</div>
@@ -388,7 +388,7 @@ export function CalendarView({ bets, currency, onUpdate, onDelete, onEdit }) {
 }
 
 function DayBetsModal({ date, bets, currency, onClose, onUpdate, onDelete, onEdit }) {
-  const d = new Date(date + 'T00:00:00');
+  const d = parseLocalDate(date);
   const label = d.toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const labelCap = label.charAt(0).toUpperCase() + label.slice(1);
   const dayPnL = bets.reduce((s, b) => s + calcProfit(b.stake, b.odds, b.status), 0);
