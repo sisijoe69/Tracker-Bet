@@ -33,7 +33,7 @@ export default function AuthScreen() {
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <Target size={40} style={{ color: '#D4A574', marginBottom: 12 }} />
-          <h1 className="serif" style={{ fontSize: 36, margin: '0 0 4px 0' }}>Bet Tracker Pro</h1>
+          <h1 className="serif" style={{ fontSize: 32, margin: '0 0 4px 0', lineHeight: 1.1 }}>Bet Tracker<br/><span style={{ fontStyle: 'italic' }}>pour les boys</span></h1>
           <p style={{ fontSize: 13, color: '#71717A', margin: 0 }}>
             {mode === 'signup' ? 'Crée ton compte' : 'Connecte-toi à ton compte'}
           </p>
