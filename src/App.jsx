@@ -2,25 +2,68 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Plus, Target, Settings as SettingsIcon, List, Home, AlertCircle, Calendar } from 'lucide-react';
 import {
-  STORAGE_KEY, DEFAULT_DATA, SPORT_LEAGUES, BET_TYPES,
-  fetchESPNGames, calcParlayOdds, calcProfit, oddsToImplied, formatOdds, loadInitialData,
+  DEFAULT_DATA, SPORT_LEAGUES, BET_TYPES,
+  fetchESPNGames, calcParlayOdds, calcProfit, oddsToImplied, formatOdds,
   localDateString, parseLocalDate,
 } from './utils.js';
 import { StatCard, HistoryView, SettingsView, CalendarView, renderGames } from './components.jsx';
+import AuthScreen from './AuthScreen.jsx';
+import {
+  supabase, signOut, loadUserData, updateProfile,
+  insertBet as sbInsertBet, updateBet as sbUpdateBet,
+  patchBetStatus, deleteBet as sbDeleteBet,
+  migrateLocalStorageIfNeeded,
+} from './supabase.js';
 
 export default function App() {
-  const [data, setData] = useState(loadInitialData);
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [data, setData] = useState(DEFAULT_DATA);
+  const [dataLoading, setDataLoading] = useState(false);
   const [view, setView] = useState('dashboard');
   const [showAddBet, setShowAddBet] = useState(false);
   const [editingBet, setEditingBet] = useState(null);
 
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthReady(true);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session?.user) { setData(DEFAULT_DATA); return; }
+    let cancelled = false;
+    (async () => {
+      setDataLoading(true);
+      try {
+        const result = await migrateLocalStorageIfNeeded(session.user.id);
+        if (result.migrated > 0) {
+          alert(`${result.migrated} pari${result.migrated > 1 ? 's' : ''} importé${result.migrated > 1 ? 's' : ''} depuis ton appareil.`);
+        }
+        const fresh = await loadUserData(session.user.id);
+        if (!cancelled) setData(fresh);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) alert('Erreur de chargement : ' + (e.message || e));
+      } finally {
+        if (!cancelled) setDataLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session?.user?.id]);
+
+  const reload = async () => {
+    if (!session?.user) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch (e) {
-      console.error('Storage error:', e);
-    }
-  }, [data]);
+      const fresh = await loadUserData(session.user.id);
+      setData(fresh);
+    } catch (e) { console.error(e); }
+  };
 
   const stats = useMemo(() => {
     const { bets, settings } = data;
@@ -69,38 +112,68 @@ export default function App() {
     return Object.values(groups).sort((a, b) => b.profit - a.profit);
   }, [data]);
 
-  const addBet = (bet) => {
-    if (editingBet) {
-      setData(prev => ({
-        ...prev,
-        bets: prev.bets.map(b => b.id === editingBet.id ? { ...bet, id: editingBet.id } : b),
-      }));
-      setEditingBet(null);
-    } else {
-      const newBet = { ...bet, id: Date.now().toString() };
-      setData(prev => ({ ...prev, bets: [newBet, ...prev.bets] }));
-    }
+  const addBet = async (bet) => {
+    if (!session?.user) return;
     setShowAddBet(false);
+    try {
+      if (editingBet) {
+        const updated = await sbUpdateBet(session.user.id, editingBet.id, bet);
+        setData(prev => ({ ...prev, bets: prev.bets.map(b => b.id === editingBet.id ? updated : b) }));
+        setEditingBet(null);
+      } else {
+        const created = await sbInsertBet(session.user.id, bet);
+        setData(prev => ({ ...prev, bets: [created, ...prev.bets] }));
+      }
+    } catch (e) {
+      alert('Erreur sauvegarde : ' + (e.message || e));
+      reload();
+    }
   };
 
-  const updateBetStatus = (id, status) => {
-    setData(prev => ({
-      ...prev,
-      bets: prev.bets.map(b => b.id === id ? { ...b, status } : b),
-    }));
+  const updateBetStatus = async (id, status) => {
+    if (!session?.user) return;
+    const prevBets = data.bets;
+    setData(prev => ({ ...prev, bets: prev.bets.map(b => b.id === id ? { ...b, status } : b) }));
+    try {
+      await patchBetStatus(session.user.id, id, status);
+    } catch (e) {
+      alert('Erreur statut : ' + (e.message || e));
+      setData(prev => ({ ...prev, bets: prevBets }));
+    }
   };
 
-  const deleteBet = (id) => {
+  const deleteBet = async (id) => {
+    if (!session?.user) return;
+    const prevBets = data.bets;
     setData(prev => ({ ...prev, bets: prev.bets.filter(b => b.id !== id) }));
+    try {
+      await sbDeleteBet(session.user.id, id);
+    } catch (e) {
+      alert('Erreur suppression : ' + (e.message || e));
+      setData(prev => ({ ...prev, bets: prevBets }));
+    }
   };
 
-  const updateSettings = (settings) => {
+  const updateSettings = async (settings) => {
+    if (!session?.user) return;
     setData(prev => ({ ...prev, settings: { ...prev.settings, ...settings } }));
+    try {
+      await updateProfile(session.user.id, { ...data.settings, ...settings });
+    } catch (e) {
+      alert('Erreur réglages : ' + (e.message || e));
+      reload();
+    }
   };
 
-  const resetAll = () => {
-    if (confirm('Effacer TOUTES les données? Cette action est irréversible.')) {
-      setData(DEFAULT_DATA);
+  const resetAll = async () => {
+    if (!session?.user) return;
+    if (!confirm('Effacer TOUS tes paris? Cette action est irréversible.')) return;
+    try {
+      const { error } = await supabase.from('bets').delete().eq('user_id', session.user.id);
+      if (error) throw error;
+      setData(prev => ({ ...prev, bets: [] }));
+    } catch (e) {
+      alert('Erreur : ' + (e.message || e));
     }
   };
 
@@ -117,23 +190,32 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const imported = JSON.parse(event.target.result);
-        if (imported.settings && Array.isArray(imported.bets)) {
-          if (confirm('Remplacer les données actuelles par le fichier importé?')) {
-            setData(imported);
-            alert('Données importées avec succès.');
-          }
-        } else {
-          alert('Fichier invalide.');
+        if (!imported.settings || !Array.isArray(imported.bets)) { alert('Fichier invalide.'); return; }
+        if (!confirm(`Importer ${imported.bets.length} paris dans ton compte (en plus des existants)?`)) return;
+        for (const b of imported.bets) {
+          try { await sbInsertBet(session.user.id, b); } catch (err) { console.error(err); }
         }
+        await reload();
+        alert('Import terminé.');
       } catch (err) {
         alert('Erreur de lecture du fichier.');
       }
     };
     reader.readAsText(file);
   };
+
+  const handleLogout = async () => {
+    if (!confirm('Se déconnecter ?')) return;
+    await signOut();
+  };
+
+  if (!authReady) {
+    return <div style={{ minHeight: '100vh', background: '#0A0A0B', color: '#71717A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>⟳ Chargement...</div>;
+  }
+  if (!session) return <AuthScreen />;
 
   const c = data.settings.currency;
 
@@ -249,7 +331,15 @@ export default function App() {
         )}
 
         {view === 'settings' && (
-          <SettingsView data={data} onUpdate={updateSettings} onReset={resetAll} onExport={exportData} onImport={importData} />
+          <SettingsView
+            data={data}
+            displayName={data.settings.displayName || session.user.email}
+            onUpdate={updateSettings}
+            onReset={resetAll}
+            onExport={exportData}
+            onImport={importData}
+            onLogout={handleLogout}
+          />
         )}
       </div>
 

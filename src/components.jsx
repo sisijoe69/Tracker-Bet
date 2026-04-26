@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
 import { calcProfit, formatOdds, parseLocalDate } from './utils.js';
 
 export function StatCard({ label, value, accent }) {
@@ -162,7 +162,7 @@ export function renderGames(games, gamesError, form, setForm, setShowGamesList) 
   );
 }
 
-export function SettingsView({ data, onUpdate, onReset, onExport, onImport }) {
+export function SettingsView({ data, displayName, onUpdate, onReset, onExport, onImport, onLogout }) {
   const [local, setLocal] = useState(data.settings);
 
   const save = () => {
@@ -179,6 +179,20 @@ export function SettingsView({ data, onUpdate, onReset, onExport, onImport }) {
   return (
     <div className="fade-in">
       <h2 className="serif" style={{ margin: '0 0 20px 0', fontSize: 28 }}>Réglages</h2>
+
+      {displayName && (
+        <div className="card" style={{ padding: 16, marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 11, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 600, marginBottom: 4 }}>Connecté en tant que</div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{displayName}</div>
+          </div>
+          {onLogout && (
+            <button onClick={onLogout} style={{ background: 'transparent', color: '#F87171', border: '1px solid #F87171', padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', fontWeight: 600 }}>
+              <LogOut size={14} /> Déconnexion
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="card" style={{ padding: 20, marginBottom: 16 }}>
         <h3 style={{ margin: '0 0 4px 0', fontSize: 15 }}>Gestion de Bankroll</h3>
