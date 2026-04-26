@@ -26,3 +26,12 @@ const inlined = html
 
 fs.writeFileSync(path.resolve('index.html'), inlined);
 console.log(`Inlined index.html written (${(inlined.length / 1024).toFixed(1)} KB)`);
+
+const PWA_ASSETS = ['manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable.png', 'apple-touch-icon.png'];
+for (const name of PWA_ASSETS) {
+  const src = path.join(distDir, name);
+  if (fs.existsSync(src)) {
+    fs.copyFileSync(src, path.resolve(name));
+    console.log(`Copied ${name}`);
+  }
+}

@@ -8,6 +8,7 @@ import {
 } from './utils.js';
 import { StatCard, HistoryView, SettingsView, CalendarView, renderGames } from './components.jsx';
 import AuthScreen from './AuthScreen.jsx';
+import ResetPasswordScreen from './ResetPasswordScreen.jsx';
 import {
   supabase, signOut, loadUserData, updateProfile,
   insertBet as sbInsertBet, updateBet as sbUpdateBet,
@@ -18,6 +19,7 @@ import {
 export default function App() {
   const [session, setSession] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const [data, setData] = useState(DEFAULT_DATA);
   const [dataLoading, setDataLoading] = useState(false);
   const [view, setView] = useState('dashboard');
@@ -29,8 +31,9 @@ export default function App() {
       setSession(session);
       setAuthReady(true);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
+      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -214,6 +217,9 @@ export default function App() {
 
   if (!authReady) {
     return <div style={{ minHeight: '100vh', background: '#0A0A0B', color: '#71717A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>⟳ Chargement...</div>;
+  }
+  if (recoveryMode && session) {
+    return <ResetPasswordScreen onDone={() => { setRecoveryMode(false); alert('Mot de passe mis à jour. Tu es connecté.'); }} />;
   }
   if (!session) return <AuthScreen />;
 

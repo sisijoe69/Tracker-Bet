@@ -24,6 +24,16 @@ export async function signOut() {
   return supabase.auth.signOut();
 }
 
+export async function resetPasswordForEmail(email) {
+  return supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname,
+  });
+}
+
+export async function updatePassword(newPassword) {
+  return supabase.auth.updateUser({ password: newPassword });
+}
+
 const betFromRow = (r) => ({
   id: r.id,
   date: r.date,
