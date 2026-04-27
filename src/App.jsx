@@ -13,7 +13,7 @@ import {
   supabase, signOut, loadUserData, updateProfile,
   insertBet as sbInsertBet, updateBet as sbUpdateBet,
   patchBetStatus, deleteBet as sbDeleteBet,
-  migrateLocalStorageIfNeeded,
+  migrateLocalStorageIfNeeded, friendlyError,
 } from './supabase.js';
 
 export default function App() {
@@ -52,7 +52,7 @@ export default function App() {
         if (!cancelled) setData(fresh);
       } catch (e) {
         console.error(e);
-        if (!cancelled) alert('Erreur de chargement : ' + (e.message || e));
+        if (!cancelled) alert('Erreur de chargement : ' + friendlyError(e));
       } finally {
         if (!cancelled) setDataLoading(false);
       }
@@ -128,7 +128,7 @@ export default function App() {
         setData(prev => ({ ...prev, bets: [created, ...prev.bets] }));
       }
     } catch (e) {
-      alert('Erreur sauvegarde : ' + (e.message || e));
+      alert('Erreur sauvegarde : ' + friendlyError(e));
       reload();
     }
   };
@@ -140,7 +140,7 @@ export default function App() {
     try {
       await patchBetStatus(session.user.id, id, status);
     } catch (e) {
-      alert('Erreur statut : ' + (e.message || e));
+      alert('Erreur statut : ' + friendlyError(e));
       setData(prev => ({ ...prev, bets: prevBets }));
     }
   };
@@ -152,7 +152,7 @@ export default function App() {
     try {
       await sbDeleteBet(session.user.id, id);
     } catch (e) {
-      alert('Erreur suppression : ' + (e.message || e));
+      alert('Erreur suppression : ' + friendlyError(e));
       setData(prev => ({ ...prev, bets: prevBets }));
     }
   };
@@ -163,7 +163,7 @@ export default function App() {
     try {
       await updateProfile(session.user.id, { ...data.settings, ...settings });
     } catch (e) {
-      alert('Erreur réglages : ' + (e.message || e));
+      alert('Erreur réglages : ' + friendlyError(e));
       reload();
     }
   };
@@ -176,7 +176,7 @@ export default function App() {
       if (error) throw error;
       setData(prev => ({ ...prev, bets: [] }));
     } catch (e) {
-      alert('Erreur : ' + (e.message || e));
+      alert('Erreur : ' + friendlyError(e));
     }
   };
 

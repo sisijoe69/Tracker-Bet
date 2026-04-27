@@ -8,6 +8,36 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, autoRefreshToken: true },
 });
 
+function isNetworkError(e) {
+  const msg = (e?.message || String(e)).toLowerCase();
+  return msg.includes('load failed') ||
+         msg.includes('failed to fetch') ||
+         msg.includes('networkerror') ||
+         msg.includes('network request failed') ||
+         msg.includes('timeout');
+}
+
+async function withRetry(fn, retries = 2) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (!isNetworkError(e) || attempt === retries) throw e;
+      await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
+
+function friendlyError(e) {
+  if (isNetworkError(e)) return 'Connexion internet instable. Réessaie dans un instant.';
+  return e?.message || String(e);
+}
+
+export { friendlyError };
+
 export async function signUp(email, password, displayName) {
   return supabase.auth.signUp({
     email,
@@ -63,78 +93,90 @@ const betToRow = (b, userId) => ({
 });
 
 export async function loadUserData(userId) {
-  const [profileRes, betsRes] = await Promise.all([
-    supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
-    supabase.from('bets').select('*').eq('user_id', userId).order('date', { ascending: false }).order('created_at', { ascending: false }),
-  ]);
-  if (profileRes.error) throw profileRes.error;
-  if (betsRes.error) throw betsRes.error;
+  return withRetry(async () => {
+    const [profileRes, betsRes] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
+      supabase.from('bets').select('*').eq('user_id', userId).order('date', { ascending: false }).order('created_at', { ascending: false }),
+    ]);
+    if (profileRes.error) throw profileRes.error;
+    if (betsRes.error) throw betsRes.error;
 
-  const p = profileRes.data;
-  return {
-    settings: {
-      initialBankroll: Number(p?.initial_bankroll ?? 1000),
-      unitSizePercent: Number(p?.unit_size_percent ?? 1),
-      currency: p?.currency ?? 'CAD',
-      displayName: p?.display_name ?? '',
-    },
-    bets: (betsRes.data || []).map(betFromRow),
-  };
+    const p = profileRes.data;
+    return {
+      settings: {
+        initialBankroll: Number(p?.initial_bankroll ?? 1000),
+        unitSizePercent: Number(p?.unit_size_percent ?? 1),
+        currency: p?.currency ?? 'CAD',
+        displayName: p?.display_name ?? '',
+      },
+      bets: (betsRes.data || []).map(betFromRow),
+    };
+  });
 }
 
 export async function updateProfile(userId, settings) {
-  const { error } = await supabase.from('profiles').upsert({
-    id: userId,
-    initial_bankroll: Number(settings.initialBankroll),
-    unit_size_percent: Number(settings.unitSizePercent),
-    currency: settings.currency,
+  return withRetry(async () => {
+    const { error } = await supabase.from('profiles').upsert({
+      id: userId,
+      initial_bankroll: Number(settings.initialBankroll),
+      unit_size_percent: Number(settings.unitSizePercent),
+      currency: settings.currency,
+    });
+    if (error) throw error;
   });
-  if (error) throw error;
 }
 
 export async function insertBet(userId, bet) {
-  const { data, error } = await supabase
-    .from('bets')
-    .insert(betToRow(bet, userId))
-    .select()
-    .single();
-  if (error) throw error;
-  return betFromRow(data);
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from('bets')
+      .insert(betToRow(bet, userId))
+      .select()
+      .single();
+    if (error) throw error;
+    return betFromRow(data);
+  });
 }
 
 export async function updateBet(userId, id, bet) {
-  const row = betToRow(bet, userId);
-  delete row.user_id;
-  const { data, error } = await supabase
-    .from('bets')
-    .update(row)
-    .eq('id', id)
-    .eq('user_id', userId)
-    .select()
-    .single();
-  if (error) throw error;
-  return betFromRow(data);
+  return withRetry(async () => {
+    const row = betToRow(bet, userId);
+    delete row.user_id;
+    const { data, error } = await supabase
+      .from('bets')
+      .update(row)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select()
+      .single();
+    if (error) throw error;
+    return betFromRow(data);
+  });
 }
 
 export async function patchBetStatus(userId, id, status) {
-  const { data, error } = await supabase
-    .from('bets')
-    .update({ status })
-    .eq('id', id)
-    .eq('user_id', userId)
-    .select()
-    .single();
-  if (error) throw error;
-  return betFromRow(data);
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from('bets')
+      .update({ status })
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select()
+      .single();
+    if (error) throw error;
+    return betFromRow(data);
+  });
 }
 
 export async function deleteBet(userId, id) {
-  const { error } = await supabase
-    .from('bets')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', userId);
-  if (error) throw error;
+  return withRetry(async () => {
+    const { error } = await supabase
+      .from('bets')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
+    if (error) throw error;
+  });
 }
 
 export async function migrateLocalStorageIfNeeded(userId) {
