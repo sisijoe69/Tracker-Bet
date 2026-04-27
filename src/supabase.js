@@ -145,14 +145,20 @@ export async function migrateLocalStorageIfNeeded(userId) {
     if (!raw) return { migrated: 0 };
     const parsed = JSON.parse(raw);
     const localBetCount = parsed?.bets?.length || 0;
-    if (!localBetCount && !parsed?.settings) return { migrated: 0 };
+    if (!localBetCount && !parsed?.settings) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem(STORAGE_KEY + ':migrated', 'empty-' + new Date().toISOString());
+      return { migrated: 0 };
+    }
 
     const { count } = await supabase
       .from('bets')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId);
+
     if ((count ?? 0) > 0) {
-      localStorage.setItem(STORAGE_KEY + ':migrated', 'skipped-existing-' + new Date().toISOString());
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem(STORAGE_KEY + ':migrated', 'cleared-existing-' + new Date().toISOString());
       return { migrated: 0 };
     }
 
@@ -178,6 +184,7 @@ export async function migrateLocalStorageIfNeeded(userId) {
     }
 
     localStorage.setItem(STORAGE_KEY + ':migrated', new Date().toISOString());
+    localStorage.removeItem(STORAGE_KEY);
     return { migrated };
   } catch (e) {
     console.error('Migration error:', e);
