@@ -139,23 +139,38 @@ export async function deleteBet(userId, id) {
 
 export async function migrateLocalStorageIfNeeded(userId) {
   try {
-    const { count } = await supabase
-      .from('bets')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId);
-    if ((count ?? 0) > 0) return { migrated: 0 };
+    if (localStorage.getItem(STORAGE_KEY + ':migrated')) return { migrated: 0 };
 
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { migrated: 0 };
     const parsed = JSON.parse(raw);
-    if (!parsed?.bets?.length && !parsed?.settings) return { migrated: 0 };
+    const localBetCount = parsed?.bets?.length || 0;
+    if (!localBetCount && !parsed?.settings) return { migrated: 0 };
 
-    if (parsed.settings) {
-      await updateProfile(userId, parsed.settings);
+    const { count } = await supabase
+      .from('bets')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId);
+    if ((count ?? 0) > 0) {
+      localStorage.setItem(STORAGE_KEY + ':migrated', 'skipped-existing-' + new Date().toISOString());
+      return { migrated: 0 };
     }
 
+    const ok = confirm(
+      `Cet appareil contient ${localBetCount} pari(s) sauvegardés localement (avant la version multi-comptes).\n\n` +
+      `Importer ces paris dans ton compte actuel ?\n\n` +
+      `⚠️ Choisis "Annuler" si tu te connectes au compte de quelqu'un d'autre — sinon ses données seront mélangées avec les tiennes.`
+    );
+
+    if (!ok) {
+      localStorage.setItem(STORAGE_KEY + ':migrated', 'declined-' + new Date().toISOString());
+      return { migrated: 0 };
+    }
+
+    if (parsed.settings) await updateProfile(userId, parsed.settings);
+
     let migrated = 0;
-    if (parsed.bets?.length) {
+    if (localBetCount) {
       const rows = parsed.bets.map(b => betToRow(b, userId));
       const { error } = await supabase.from('bets').insert(rows);
       if (error) throw error;
