@@ -25,6 +25,7 @@ export default function App() {
   const [view, setView] = useState('dashboard');
   const [showAddBet, setShowAddBet] = useState(false);
   const [editingBet, setEditingBet] = useState(null);
+  const [addBetDate, setAddBetDate] = useState(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -333,6 +334,7 @@ export default function App() {
             onUpdate={updateBetStatus}
             onDelete={deleteBet}
             onEdit={(bet) => { setEditingBet(bet); setShowAddBet(true); }}
+            onAddBet={(date) => { setAddBetDate(date); setShowAddBet(true); }}
           />
         )}
 
@@ -390,17 +392,18 @@ export default function App() {
       {showAddBet && (
         <AddBetModal
           onAdd={addBet}
-          onClose={() => { setShowAddBet(false); setEditingBet(null); }}
+          onClose={() => { setShowAddBet(false); setEditingBet(null); setAddBetDate(null); }}
           unitSize={stats.unitSize}
           currency={c}
           editingBet={editingBet}
+          defaultDate={addBetDate}
         />
       )}
     </div>
   );
 }
 
-function AddBetModal({ onAdd, onClose, unitSize, currency, editingBet }) {
+function AddBetModal({ onAdd, onClose, unitSize, currency, editingBet, defaultDate }) {
   const [form, setForm] = useState(() => {
     if (editingBet) {
       return {
@@ -417,7 +420,7 @@ function AddBetModal({ onAdd, onClose, unitSize, currency, editingBet }) {
       };
     }
     return {
-      date: localDateString(),
+      date: defaultDate || localDateString(),
       sport: 'MLB',
       match: '',
       description: '',

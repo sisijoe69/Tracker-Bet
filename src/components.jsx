@@ -256,7 +256,7 @@ export function SettingsView({ data, displayName, onUpdate, onReset, onExport, o
   );
 }
 
-export function CalendarView({ bets, currency, onUpdate, onDelete, onEdit }) {
+export function CalendarView({ bets, currency, onUpdate, onDelete, onEdit, onAddBet }) {
   const today = new Date();
   const [cursor, setCursor] = useState({ year: today.getFullYear(), month: today.getMonth() });
   const [selectedDate, setSelectedDate] = useState(null);
@@ -395,13 +395,14 @@ export function CalendarView({ bets, currency, onUpdate, onDelete, onEdit }) {
           onUpdate={onUpdate}
           onDelete={onDelete}
           onEdit={(bet) => { setSelectedDate(null); onEdit?.(bet); }}
+          onAddBet={onAddBet ? (date) => { setSelectedDate(null); onAddBet(date); } : null}
         />
       )}
     </div>
   );
 }
 
-function DayBetsModal({ date, bets, currency, onClose, onUpdate, onDelete, onEdit }) {
+function DayBetsModal({ date, bets, currency, onClose, onUpdate, onDelete, onEdit, onAddBet }) {
   const d = parseLocalDate(date);
   const label = d.toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const labelCap = label.charAt(0).toUpperCase() + label.slice(1);
@@ -421,6 +422,16 @@ function DayBetsModal({ date, bets, currency, onClose, onUpdate, onDelete, onEdi
           </div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#71717A', cursor: 'pointer', fontSize: 22, padding: 0, lineHeight: 1 }}>✕</button>
         </div>
+
+        {onAddBet && (
+          <button
+            onClick={() => onAddBet(date)}
+            className="btn-primary"
+            style={{ width: '100%', justifyContent: 'center', padding: 12, marginBottom: 16, fontSize: 14 }}
+          >
+            + Ajouter un pari pour ce jour
+          </button>
+        )}
 
         {bets.length > 0 ? (
           <>
