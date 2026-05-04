@@ -1,6 +1,191 @@
 import React, { useState, useMemo } from 'react';
-import { Download, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { Download, ChevronLeft, ChevronRight, LogOut, Flame, Trophy, TrendingUp, TrendingDown } from 'lucide-react';
 import { calcProfit, formatOdds, parseLocalDate } from './utils.js';
+
+export function PeriodFilter({ period, onChange }) {
+  const opts = [
+    { k: '7d', l: '7 jours' },
+    { k: '30d', l: '30 jours' },
+    { k: '90d', l: '90 jours' },
+    { k: 'all', l: 'Tout' },
+  ];
+  return (
+    <div style={{ display: 'flex', gap: 6, marginBottom: 16, padding: 4, background: '#141416', border: '1px solid #222226', borderRadius: 10 }}>
+      {opts.map(o => (
+        <button
+          key={o.k}
+          onClick={() => onChange(o.k)}
+          style={{
+            flex: 1, padding: '8px 4px', borderRadius: 6, fontSize: 12,
+            background: period === o.k ? '#D4A574' : 'transparent',
+            color: period === o.k ? '#0A0A0B' : '#A1A1AA',
+            border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+            transition: 'all .15s',
+          }}
+        >{o.l}</button>
+      ))}
+    </div>
+  );
+}
+
+export function AdvancedStats({ bets, currency }) {
+  const m = useMemo(() => {
+    const settled = bets.filter(b => b.status === 'won' || b.status === 'lost');
+    if (settled.length === 0) return null;
+
+    const sortedByDateDesc = [...settled].sort((a, b) => parseLocalDate(b.date) - parseLocalDate(a.date));
+    let currentStreak = 0;
+    let currentType = sortedByDateDesc[0].status;
+    for (const b of sortedByDateDesc) {
+      if (b.status === currentType) currentStreak++;
+      else break;
+    }
+
+    const sortedByDateAsc = [...settled].sort((a, b) => parseLocalDate(a.date) - parseLocalDate(b.date));
+    let longestWin = 0, longestLoss = 0, runWin = 0, runLoss = 0;
+    for (const b of sortedByDateAsc) {
+      if (b.status === 'won') { runWin++; runLoss = 0; longestWin = Math.max(longestWin, runWin); }
+      else { runLoss++; runWin = 0; longestLoss = Math.max(longestLoss, runLoss); }
+    }
+
+    const profits = settled.map(b => ({ p: calcProfit(b.stake, b.odds, b.status), bet: b }));
+    const biggestWin = profits.reduce((max, x) => x.p > max.p ? x : max, { p: -Infinity });
+    const biggestLoss = profits.reduce((min, x) => x.p < min.p ? x : min, { p: Infinity });
+
+    const stakes = bets.map(b => Number(b.stake)).filter(s => s > 0);
+    const avgStake = stakes.length ? stakes.reduce((s, v) => s + v, 0) / stakes.length : 0;
+
+    const oddsList = bets.map(b => Number(b.odds)).filter(o => o !== 0 && !isNaN(o));
+    const avgOdds = oddsList.length ? oddsList.reduce((s, v) => s + v, 0) / oddsList.length : 0;
+
+    return {
+      currentStreak, currentType,
+      longestWin, longestLoss,
+      biggestWin: biggestWin.p === -Infinity ? null : biggestWin,
+      biggestLoss: biggestLoss.p === Infinity ? null : biggestLoss,
+      avgStake, avgOdds,
+    };
+  }, [bets]);
+
+  if (!m) return null;
+
+  const Row = ({ icon, label, value, color }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #1F1F22' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {icon}
+        <span style={{ fontSize: 13, color: '#A1A1AA' }}>{label}</span>
+      </div>
+      <span className="mono" style={{ fontSize: 14, fontWeight: 700, color: color || '#FAFAF9' }}>{value}</span>
+    </div>
+  );
+
+  return (
+    <div className="card" style={{ padding: 20, marginBottom: 20 }}>
+      <h3 className="serif" style={{ margin: '0 0 12px 0', fontSize: 22 }}>Stats détaillées</h3>
+
+      <Row
+        icon={<Flame size={14} style={{ color: m.currentType === 'won' ? '#4ADE80' : '#F87171' }} />}
+        label="Série en cours"
+        value={`${m.currentStreak} ${m.currentType === 'won' ? 'gagné' + (m.currentStreak > 1 ? 's' : '') : 'perdu' + (m.currentStreak > 1 ? 's' : '')}`}
+        color={m.currentType === 'won' ? '#4ADE80' : '#F87171'}
+      />
+      <Row
+        icon={<Trophy size={14} style={{ color: '#4ADE80' }} />}
+        label="Plus longue série gagnante"
+        value={`${m.longestWin}`}
+        color="#4ADE80"
+      />
+      <Row
+        icon={<Trophy size={14} style={{ color: '#F87171' }} />}
+        label="Plus longue série perdante"
+        value={`${m.longestLoss}`}
+        color="#F87171"
+      />
+      {m.biggestWin && (
+        <Row
+          icon={<TrendingUp size={14} style={{ color: '#4ADE80' }} />}
+          label="Plus gros gain"
+          value={`+${m.biggestWin.p.toFixed(2)} ${currency}`}
+          color="#4ADE80"
+        />
+      )}
+      {m.biggestLoss && m.biggestLoss.p < 0 && (
+        <Row
+          icon={<TrendingDown size={14} style={{ color: '#F87171' }} />}
+          label="Plus grosse perte"
+          value={`${m.biggestLoss.p.toFixed(2)} ${currency}`}
+          color="#F87171"
+        />
+      )}
+      <Row label="Mise moyenne" value={`${m.avgStake.toFixed(2)} ${currency}`} icon={<span style={{ width: 14 }} />} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 14 }} />
+          <span style={{ fontSize: 13, color: '#A1A1AA' }}>Cote moyenne</span>
+        </div>
+        <span className="mono" style={{ fontSize: 14, fontWeight: 700, color: '#FAFAF9' }}>
+          {m.avgOdds > 0 ? '+' : ''}{Math.round(m.avgOdds)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function BetTypeBreakdown({ bets, currency }) {
+  const groups = useMemo(() => {
+    const g = {
+      single: { count: 0, wins: 0, losses: 0, profit: 0, staked: 0 },
+      parlay: { count: 0, wins: 0, losses: 0, profit: 0, staked: 0 },
+    };
+    bets.forEach(b => {
+      if (b.status === 'pending') return;
+      const isParlay = b.betType === 'Parlay' || (b.legs && b.legs.length > 0);
+      const k = isParlay ? 'parlay' : 'single';
+      g[k].count++;
+      if (b.status === 'won') g[k].wins++;
+      if (b.status === 'lost') g[k].losses++;
+      if (b.status === 'won' || b.status === 'lost') g[k].staked += Number(b.stake || 0);
+      g[k].profit += calcProfit(b.stake, b.odds, b.status);
+    });
+    ['single', 'parlay'].forEach(k => {
+      g[k].roi = g[k].staked > 0 ? (g[k].profit / g[k].staked) * 100 : 0;
+      g[k].winRate = (g[k].wins + g[k].losses) > 0 ? (g[k].wins / (g[k].wins + g[k].losses)) * 100 : 0;
+    });
+    return g;
+  }, [bets]);
+
+  if (groups.single.count === 0 && groups.parlay.count === 0) return null;
+
+  const Block = ({ label, emoji, g }) => {
+    if (g.count === 0) return null;
+    return (
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 600, marginBottom: 8 }}>
+          {emoji} {label}
+        </div>
+        <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: g.profit >= 0 ? '#4ADE80' : '#F87171', marginBottom: 4 }}>
+          {g.profit >= 0 ? '+' : ''}{g.profit.toFixed(2)}
+        </div>
+        <div style={{ fontSize: 11, color: '#A1A1AA', lineHeight: 1.5 }}>
+          {g.count} pari{g.count > 1 ? 's' : ''}<br />
+          {g.wins}W-{g.losses}L · {g.winRate.toFixed(0)}%<br />
+          ROI <span className="mono" style={{ color: g.roi >= 0 ? '#4ADE80' : '#F87171', fontWeight: 600 }}>{g.roi >= 0 ? '+' : ''}{g.roi.toFixed(1)}%</span>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="card" style={{ padding: 20, marginBottom: 20 }}>
+      <h3 className="serif" style={{ margin: '0 0 16px 0', fontSize: 22 }}>Singles vs Parlays</h3>
+      <div style={{ display: 'flex', gap: 16 }}>
+        <Block label="Singles" emoji="🎯" g={groups.single} />
+        <div style={{ width: 1, background: '#222226' }} />
+        <Block label="Parlays" emoji="🎯🎯" g={groups.parlay} />
+      </div>
+    </div>
+  );
+}
 
 export function StatCard({ label, value, accent }) {
   const colors = { green: '#4ADE80', red: '#F87171', gold: '#D4A574', neutral: '#FAFAF9' };

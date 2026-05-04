@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Plus, Target, Settings as SettingsIcon, List, Home, AlertCircle, Calendar } from 'lucide-react';
 import {
   DEFAULT_DATA, SPORT_LEAGUES, BET_TYPES,
   fetchESPNGames, calcParlayOdds, calcProfit, oddsToImplied, formatOdds,
   localDateString, parseLocalDate,
 } from './utils.js';
-import { StatCard, HistoryView, SettingsView, CalendarView, renderGames } from './components.jsx';
+import { StatCard, HistoryView, SettingsView, CalendarView, renderGames, PeriodFilter, AdvancedStats, BetTypeBreakdown } from './components.jsx';
 import AuthScreen from './AuthScreen.jsx';
 import ResetPasswordScreen from './ResetPasswordScreen.jsx';
 import {
@@ -26,6 +26,7 @@ export default function App() {
   const [showAddBet, setShowAddBet] = useState(false);
   const [editingBet, setEditingBet] = useState(null);
   const [addBetDate, setAddBetDate] = useState(null);
+  const [period, setPeriod] = useState('all');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -69,8 +70,24 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
+  const filteredBets = useMemo(() => {
+    if (period === 'all') return data.bets;
+    const days = { '7d': 7, '30d': 30, '90d': 90 }[period];
+    if (!days) return data.bets;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    cutoff.setHours(0, 0, 0, 0);
+    return data.bets.filter(b => parseLocalDate(b.date) >= cutoff);
+  }, [data.bets, period]);
+
+  const allTimeProfit = useMemo(
+    () => data.bets.reduce((s, b) => s + calcProfit(b.stake, b.odds, b.status), 0),
+    [data.bets]
+  );
+
   const stats = useMemo(() => {
-    const { bets, settings } = data;
+    const { settings } = data;
+    const bets = filteredBets;
     const unitSize = (settings.initialBankroll * settings.unitSizePercent) / 100;
     const settled = bets.filter(b => b.status === 'won' || b.status === 'lost');
     const wins = bets.filter(b => b.status === 'won').length;
@@ -78,16 +95,16 @@ export default function App() {
     const pushes = bets.filter(b => b.status === 'push' || b.status === 'void').length;
     const pending = bets.filter(b => b.status === 'pending').length;
     const totalStaked = settled.reduce((s, b) => s + Number(b.stake || 0), 0);
-    const totalProfit = bets.reduce((s, b) => s + calcProfit(b.stake, b.odds, b.status), 0);
-    const bankroll = settings.initialBankroll + totalProfit;
-    const roi = totalStaked > 0 ? (totalProfit / totalStaked) * 100 : 0;
+    const periodProfit = bets.reduce((s, b) => s + calcProfit(b.stake, b.odds, b.status), 0);
+    const bankroll = settings.initialBankroll + allTimeProfit;
+    const roi = totalStaked > 0 ? (periodProfit / totalStaked) * 100 : 0;
     const winRate = wins + losses > 0 ? (wins / (wins + losses)) * 100 : 0;
-    const unitsUp = unitSize > 0 ? totalProfit / unitSize : 0;
-    return { bankroll, totalProfit, roi, winRate, wins, losses, pushes, pending, totalStaked, unitSize, unitsUp };
-  }, [data]);
+    const unitsUp = unitSize > 0 ? periodProfit / unitSize : 0;
+    return { bankroll, totalProfit: periodProfit, roi, winRate, wins, losses, pushes, pending, totalStaked, unitSize, unitsUp };
+  }, [data.settings, filteredBets, allTimeProfit]);
 
   const chartData = useMemo(() => {
-    const sorted = [...data.bets]
+    const sorted = [...filteredBets]
       .filter(b => b.status !== 'pending')
       .sort((a, b) => parseLocalDate(a.date) - parseLocalDate(b.date));
     let running = data.settings.initialBankroll;
@@ -101,11 +118,11 @@ export default function App() {
       });
     });
     return points;
-  }, [data]);
+  }, [filteredBets, data.settings.initialBankroll]);
 
   const sportStats = useMemo(() => {
     const groups = {};
-    data.bets.forEach(b => {
+    filteredBets.forEach(b => {
       if (b.status === 'pending') return;
       if (!groups[b.sport]) groups[b.sport] = { sport: b.sport, profit: 0, count: 0, wins: 0, losses: 0 };
       groups[b.sport].profit += calcProfit(b.stake, b.odds, b.status);
@@ -114,7 +131,7 @@ export default function App() {
       if (b.status === 'lost') groups[b.sport].losses++;
     });
     return Object.values(groups).sort((a, b) => b.profit - a.profit);
-  }, [data]);
+  }, [filteredBets]);
 
   const addBet = async (bet) => {
     if (!session?.user) return;
@@ -255,11 +272,13 @@ export default function App() {
       <div style={{ padding: '20px', maxWidth: 700, margin: '0 auto' }}>
         {view === 'dashboard' && (
           <div className="fade-in">
+            <PeriodFilter period={period} onChange={setPeriod} />
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 20 }}>
+              <StatCard label={`P&L ${period === 'all' ? 'Total' : period}`} value={`${stats.totalProfit >= 0 ? '+' : ''}${stats.totalProfit.toFixed(2)}`} accent={stats.totalProfit >= 0 ? 'green' : 'red'} />
               <StatCard label="ROI" value={`${stats.roi.toFixed(2)}%`} accent={stats.roi >= 0 ? 'green' : 'red'} />
               <StatCard label="Win Rate" value={`${stats.winRate.toFixed(1)}%`} accent={stats.winRate >= 52.4 ? 'green' : 'neutral'} />
               <StatCard label="Record" value={`${stats.wins}-${stats.losses}${stats.pushes ? `-${stats.pushes}` : ''}`} accent="neutral" />
-              <StatCard label="En Attente" value={stats.pending} accent="gold" />
             </div>
 
             {chartData.length > 1 && (
@@ -272,17 +291,21 @@ export default function App() {
                   <LineChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1F1F22" vertical={false} />
                     <XAxis dataKey="date" stroke="#52525B" style={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <YAxis stroke="#52525B" style={{ fontSize: 10 }} tickLine={false} axisLine={false} width={50} />
+                    <YAxis stroke="#52525B" style={{ fontSize: 10 }} tickLine={false} axisLine={false} width={50} domain={['auto', 'auto']} />
                     <Tooltip
                       contentStyle={{ background: '#141416', border: '1px solid #2A2A2F', borderRadius: 8, fontSize: 12 }}
                       labelStyle={{ color: '#A1A1AA' }}
                       formatter={(v) => [`${v} ${c}`, 'Bankroll']}
                     />
+                    <ReferenceLine y={data.settings.initialBankroll} stroke="#52525B" strokeDasharray="4 4" label={{ value: 'Break-even', position: 'insideTopLeft', fill: '#71717A', fontSize: 10 }} />
                     <Line type="monotone" dataKey="bankroll" stroke="#D4A574" strokeWidth={2} dot={{ fill: '#D4A574', r: 3 }} activeDot={{ r: 5 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
             )}
+
+            <AdvancedStats bets={filteredBets} currency={c} />
+            <BetTypeBreakdown bets={filteredBets} currency={c} />
 
             {sportStats.length > 0 && (
               <div className="card" style={{ padding: 20, marginBottom: 20 }}>
