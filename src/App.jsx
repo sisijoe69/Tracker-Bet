@@ -356,7 +356,13 @@ export default function App() {
         )}
 
         {view === 'analytics' && (
-          <AnalyticsView bets={data.bets} currency={c} onBack={() => setView('dashboard')} />
+          <AnalyticsView
+            bets={data.bets}
+            currency={c}
+            currentBankroll={stats.bankroll}
+            unitSize={stats.unitSize}
+            onBack={() => setView('dashboard')}
+          />
         )}
 
         {view === 'history' && (
