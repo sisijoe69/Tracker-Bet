@@ -35,6 +35,50 @@ export const SPORT_LEAGUES = [
 
 export const BET_TYPES = ['Moneyline', 'Spread/Run Line', 'Over/Under', 'Prop', 'Parlay', 'Futures', 'Autre'];
 
+export const MARKET_TYPES = [
+  { k: 'moneyline', l: 'Moneyline' },
+  { k: 'spread', l: 'Spread / Run line / Puck line' },
+  { k: 'game_total_over', l: 'Game total — OVER' },
+  { k: 'game_total_under', l: 'Game total — UNDER' },
+  { k: 'team_total_over', l: 'Team total — OVER' },
+  { k: 'team_total_under', l: 'Team total — UNDER' },
+  { k: 'method_bet', l: 'Method bet (UFC KO/Sub/Dec, MLB Ks)' },
+  { k: 'player_prop', l: 'Player prop' },
+];
+
+export const SIGNALS = [
+  { k: 'hit_rate_team', l: 'hit_rate_team' },
+  { k: 'hit_rate_pitcher', l: 'hit_rate_pitcher' },
+  { k: 'park_factor', l: 'park_factor' },
+  { k: 'weather', l: 'weather' },
+  { k: 'pace_nba', l: 'pace_nba' },
+  { k: 'rest_b2b', l: 'rest_b2b' },
+  { k: 'goalie_starter', l: 'goalie_starter' },
+  { k: 'method_bet_ufc', l: 'method_bet_ufc' },
+  { k: 'lineup_news', l: 'lineup_news' },
+  { k: 'reverse_line_movement', l: 'reverse_line_movement' },
+  { k: 'value_play', l: 'value_play' },
+];
+
+export function juiceCategory(odds) {
+  const o = Number(odds);
+  if (!o || isNaN(o)) return null;
+  if (o >= 100) return { k: 'plus_money', l: 'Plus money' };
+  if (o >= -120) return { k: 'standard', l: 'Standard juice' };
+  if (o >= -150) return { k: 'premium', l: 'Premium juice' };
+  return { k: 'heavy', l: 'Heavy juice' };
+}
+
+export function calcCLV(placedOdds, closingOdds) {
+  const p = Number(placedOdds);
+  const c = Number(closingOdds);
+  if (!p || !c || isNaN(p) || isNaN(c)) return null;
+  const ip = oddsToImplied(p);
+  const ic = oddsToImplied(c);
+  if (!ip) return null;
+  return ((ic - ip) / ip) * 100;
+}
+
 export async function fetchESPNGames(sportLabel, dateStr) {
   const league = SPORT_LEAGUES.find(s => s.label === sportLabel);
   if (!league || !league.path) return { games: [], error: null };

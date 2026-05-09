@@ -2,11 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Plus, Target, Settings as SettingsIcon, List, Home, AlertCircle, Calendar } from 'lucide-react';
 import {
-  DEFAULT_DATA, SPORT_LEAGUES, BET_TYPES,
+  DEFAULT_DATA, SPORT_LEAGUES, BET_TYPES, MARKET_TYPES, SIGNALS,
   fetchESPNGames, calcParlayOdds, calcProfit, oddsToImplied, formatOdds,
-  localDateString, parseLocalDate,
+  localDateString, parseLocalDate, juiceCategory, calcCLV,
 } from './utils.js';
-import { StatCard, HistoryView, SettingsView, CalendarView, renderGames, PeriodFilter, AdvancedStats, BetTypeBreakdown } from './components.jsx';
+import { StatCard, HistoryView, SettingsView, CalendarView, renderGames, PeriodFilter, AdvancedStats, BetTypeBreakdown, CLVCard, AnalyticsView } from './components.jsx';
 import AuthScreen from './AuthScreen.jsx';
 import ResetPasswordScreen from './ResetPasswordScreen.jsx';
 import {
@@ -304,8 +304,17 @@ export default function App() {
               </div>
             )}
 
+            <CLVCard bets={filteredBets} />
             <AdvancedStats bets={filteredBets} currency={c} />
             <BetTypeBreakdown bets={filteredBets} currency={c} />
+
+            <button
+              onClick={() => setView('analytics')}
+              className="btn-primary"
+              style={{ width: '100%', justifyContent: 'center', padding: 14, marginBottom: 20, fontSize: 14 }}
+            >
+              📊 Voir les Analytics détaillés
+            </button>
 
             {sportStats.length > 0 && (
               <div className="card" style={{ padding: 20, marginBottom: 20 }}>
@@ -344,6 +353,10 @@ export default function App() {
               </div>
             )}
           </div>
+        )}
+
+        {view === 'analytics' && (
+          <AnalyticsView bets={data.bets} currency={c} onBack={() => setView('dashboard')} />
         )}
 
         {view === 'history' && (
@@ -440,6 +453,9 @@ function AddBetModal({ onAdd, onClose, unitSize, currency, editingBet, defaultDa
         status: editingBet.status || 'pending',
         notes: editingBet.notes || '',
         legs: editingBet.legs || [],
+        closingOdds: editingBet.closingOdds == null ? '' : String(editingBet.closingOdds),
+        marketType: editingBet.marketType || '',
+        signals: Array.isArray(editingBet.signals) ? editingBet.signals : [],
       };
     }
     return {
@@ -453,6 +469,9 @@ function AddBetModal({ onAdd, onClose, unitSize, currency, editingBet, defaultDa
       status: 'pending',
       notes: '',
       legs: [],
+      closingOdds: '',
+      marketType: '',
+      signals: [],
     };
   });
 
@@ -496,6 +515,15 @@ function AddBetModal({ onAdd, onClose, unitSize, currency, editingBet, defaultDa
     setGames(g); setGamesError(error); setShowGamesList(true); setLoadingGames(false);
   };
 
+  const liveCLV = !isParlay ? calcCLV(form.odds, form.closingOdds) : null;
+
+  const toggleSignal = (k) => {
+    setForm(f => ({
+      ...f,
+      signals: f.signals.includes(k) ? f.signals.filter(s => s !== k) : [...f.signals, k],
+    }));
+  };
+
   const handleSubmit = () => {
     if (isParlay) {
       if (form.legs.length < 2) { alert('Un parlay nécessite au moins 2 jambes.'); return; }
@@ -510,10 +538,17 @@ function AddBetModal({ onAdd, onClose, unitSize, currency, editingBet, defaultDa
         odds: Number(parlayOdds),
         stake: Number(form.stake),
         legs: form.legs,
+        closingOdds: form.closingOdds === '' ? null : Number(form.closingOdds),
       });
     } else {
       if (!form.description || !form.odds || !form.stake) { alert('Remplis les champs requis.'); return; }
-      onAdd({ ...form, stake: Number(form.stake), odds: Number(form.odds), legs: [] });
+      onAdd({
+        ...form,
+        stake: Number(form.stake),
+        odds: Number(form.odds),
+        legs: [],
+        closingOdds: form.closingOdds === '' ? null : Number(form.closingOdds),
+      });
     }
   };
 
@@ -627,6 +662,49 @@ function AddBetModal({ onAdd, onClose, unitSize, currency, editingBet, defaultDa
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div><label className="label">Cote (US) *</label><input className="input mono" type="number" placeholder="-110 ou +150" value={form.odds} onChange={e => setForm({ ...form, odds: e.target.value })} /></div>
                 <div><label className="label">Mise ({currency}) *</label><input className="input mono" type="number" step="0.01" value={form.stake} onChange={e => setForm({ ...form, stake: e.target.value })} /></div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label className="label">Type de marché</label>
+                  <select className="input" value={form.marketType} onChange={e => setForm({ ...form, marketType: e.target.value })}>
+                    <option value="">—</option>
+                    {MARKET_TYPES.map(m => <option key={m.k} value={m.k}>{m.l}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Cote closing</label>
+                  <input className="input mono" type="number" placeholder="ex: -125" value={form.closingOdds} onChange={e => setForm({ ...form, closingOdds: e.target.value })} />
+                  {liveCLV != null && (
+                    <div className="mono" style={{ fontSize: 11, marginTop: 4, color: liveCLV >= 2 ? '#4ADE80' : liveCLV >= 0 ? '#A1A1AA' : '#F87171', fontWeight: 700 }}>
+                      CLV {liveCLV >= 0 ? '+' : ''}{liveCLV.toFixed(1)}% {liveCLV >= 2 ? '✅' : liveCLV <= -1 ? '⚠️' : ''}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Signaux activés</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {SIGNALS.map(s => {
+                    const on = form.signals.includes(s.k);
+                    return (
+                      <button
+                        key={s.k}
+                        type="button"
+                        onClick={() => toggleSignal(s.k)}
+                        style={{
+                          padding: '6px 10px', borderRadius: 16, fontSize: 11, cursor: 'pointer',
+                          background: on ? '#D4A574' : 'transparent',
+                          color: on ? '#0A0A0B' : '#A1A1AA',
+                          border: `1px solid ${on ? '#D4A574' : '#2A2A2F'}`,
+                          fontFamily: 'JetBrains Mono, monospace', fontWeight: 600,
+                          transition: 'all .12s',
+                        }}
+                      >{s.l}</button>
+                    );
+                  })}
+                </div>
               </div>
 
               {form.odds && form.stake && (
