@@ -1,6 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { Download, ChevronLeft, ChevronRight, LogOut, Flame, Trophy, TrendingUp, TrendingDown } from 'lucide-react';
-import { calcProfit, formatOdds, parseLocalDate } from './utils.js';
+import { calcProfit, formatOdds, parseLocalDate, juiceCategory, calcCLV, MARKET_TYPES, SIGNALS } from './utils.js';
+
+const MARKET_LABEL = Object.fromEntries(MARKET_TYPES.map(m => [m.k, m.l]));
+const SIGNAL_LABEL = Object.fromEntries(SIGNALS.map(s => [s.k, s.l]));
 
 export function PeriodFilter({ period, onChange }) {
   const opts = [
@@ -273,7 +276,29 @@ export function BetCard({ bet, currency, onUpdate, onDelete, onEdit }) {
         </div>
         <div className="mono" style={{ fontSize: 11, color: '#71717A' }}>
           {bet.stake} {currency} @ {formatOdds(bet.odds)}
+          {bet.closingOdds != null && (
+            <> → closing {formatOdds(bet.closingOdds)}{(() => {
+              const clv = calcCLV(bet.odds, bet.closingOdds);
+              if (clv == null) return null;
+              const color = clv >= 2 ? '#4ADE80' : clv <= -1 ? '#F87171' : '#A1A1AA';
+              return <span style={{ color, fontWeight: 700, marginLeft: 6 }}>· CLV {clv >= 0 ? '+' : ''}{clv.toFixed(1)}% {clv >= 2 ? '✅' : clv <= -1 ? '⚠️' : ''}</span>;
+            })()}</>
+          )}
         </div>
+        {(bet.marketType || (bet.signals && bet.signals.length > 0)) && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+            {bet.marketType && (
+              <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: '#1C1C1F', border: '1px solid #2A2A2F', color: '#D4A574', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>
+                {MARKET_LABEL[bet.marketType] || bet.marketType}
+              </span>
+            )}
+            {(bet.signals || []).map(s => (
+              <span key={s} style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'transparent', border: '1px solid #2A2A2F', color: '#A1A1AA', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>
+                {SIGNAL_LABEL[s] || s}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {expanded && (
@@ -647,6 +672,277 @@ function DayBetsModal({ date, bets, currency, onClose, onUpdate, onDelete, onEdi
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+export function CLVCard({ bets }) {
+  const stats = useMemo(() => {
+    const tracked = bets.filter(b => b.closingOdds != null && b.odds != null);
+    if (tracked.length === 0) return null;
+
+    const clvs = tracked.map(b => ({ clv: calcCLV(b.odds, b.closingOdds), bet: b })).filter(x => x.clv != null);
+    if (clvs.length === 0) return null;
+
+    const avg = clvs.reduce((s, x) => s + x.clv, 0) / clvs.length;
+
+    const bySport = {};
+    for (const x of clvs) {
+      const k = x.bet.sport || 'Autre';
+      if (!bySport[k]) bySport[k] = { sum: 0, n: 0 };
+      bySport[k].sum += x.clv;
+      bySport[k].n += 1;
+    }
+    const sportRows = Object.entries(bySport)
+      .map(([sport, v]) => ({ sport, avg: v.sum / v.n, n: v.n }))
+      .sort((a, b) => b.avg - a.avg);
+
+    return { avg, tracked: clvs.length, total: bets.length, sportRows };
+  }, [bets]);
+
+  if (!stats) return null;
+
+  const verdict = (clv, n) => {
+    if (n < 50) return { label: `⏳ encore ${50 - n} bets pour confiance`, color: '#A1A1AA' };
+    if (clv >= 2) return { label: '✅ EDGE CONFIRMÉ', color: '#4ADE80' };
+    if (clv <= -1) return { label: '⚠️ FADE', color: '#F87171' };
+    return { label: '🟡 ZONE GRISE', color: '#D4A574' };
+  };
+
+  const v = verdict(stats.avg, stats.tracked);
+
+  return (
+    <div className="card" style={{ padding: 20, marginBottom: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+        <h3 className="serif" style={{ margin: 0, fontSize: 22 }}>CLV</h3>
+        <span style={{ fontSize: 10, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.1em' }}>Closing Line Value</span>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+        <span style={{ fontSize: 12, color: '#71717A' }}>CLV moyen</span>
+        <span className="mono" style={{ fontSize: 24, fontWeight: 700, color: stats.avg >= 2 ? '#4ADE80' : stats.avg <= -1 ? '#F87171' : '#FAFAF9' }}>
+          {stats.avg >= 0 ? '+' : ''}{stats.avg.toFixed(2)}%
+        </span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#71717A', marginBottom: 4 }}>
+        <span>Volume tracké</span>
+        <span className="mono">{stats.tracked} / {stats.total}</span>
+      </div>
+      <div style={{ fontSize: 11, color: v.color, fontWeight: 700, marginTop: 8, paddingTop: 8, borderTop: '1px solid #1F1F22' }}>
+        {v.label}
+      </div>
+
+      {stats.sportRows.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 10, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 600, marginBottom: 8 }}>Par sport</div>
+          {stats.sportRows.map(r => {
+            const c = r.avg >= 2 ? '#4ADE80' : r.avg <= -1 ? '#F87171' : '#A1A1AA';
+            const icon = r.avg >= 2 ? '✅' : r.avg <= -1 ? '⚠️' : '·';
+            return (
+              <div key={r.sport} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #1F1F22' }}>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>{r.sport}</span>
+                <span className="mono" style={{ fontSize: 12, color: c, fontWeight: 700 }}>
+                  {r.avg >= 0 ? '+' : ''}{r.avg.toFixed(1)}% {icon} <span style={{ color: '#71717A', fontWeight: 400 }}>({r.n})</span>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function avgCLVOf(bets) {
+  const xs = bets.map(b => calcCLV(b.odds, b.closingOdds)).filter(x => x != null);
+  if (xs.length === 0) return null;
+  return xs.reduce((s, v) => s + v, 0) / xs.length;
+}
+
+function rowStats(bets) {
+  const settled = bets.filter(b => b.status === 'won' || b.status === 'lost');
+  const wins = settled.filter(b => b.status === 'won').length;
+  const losses = settled.filter(b => b.status === 'lost').length;
+  const profit = bets.reduce((s, b) => s + calcProfit(b.stake, b.odds, b.status), 0);
+  const staked = settled.reduce((s, b) => s + Number(b.stake || 0), 0);
+  const roi = staked > 0 ? (profit / staked) * 100 : 0;
+  const winRate = wins + losses > 0 ? (wins / (wins + losses)) * 100 : 0;
+  const clv = avgCLVOf(bets);
+  return { count: bets.length, wins, losses, profit, roi, winRate, clv };
+}
+
+function verdictTag(roi, clv, n) {
+  if (n < 5) return { label: 'small sample', color: '#71717A' };
+  if (clv != null && clv >= 2 && roi >= 5) return { label: 'EDGE CONFIRMÉ 🔥', color: '#4ADE80' };
+  if (clv != null && clv >= 1) return { label: 'EDGE', color: '#4ADE80' };
+  if (clv != null && clv <= -1) return { label: 'FADE', color: '#F87171' };
+  if (roi >= 10) return { label: 'HOT (vérifier CLV)', color: '#D4A574' };
+  if (roi <= -5) return { label: 'cold', color: '#F87171' };
+  return null;
+}
+
+function BreakdownSection({ title, rows, currency }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="card" style={{ padding: 16, marginBottom: 14 }}>
+      <h3 className="serif" style={{ margin: '0 0 10px 0', fontSize: 18 }}>{title}</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {rows.map(r => {
+          const v = verdictTag(r.s.roi, r.s.clv, r.s.count);
+          return (
+            <div key={r.label} style={{ padding: '8px 10px', background: '#0A0A0B', border: '1px solid #1F1F22', borderRadius: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4, gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
+                <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: r.s.profit >= 0 ? '#4ADE80' : '#F87171' }}>
+                  {r.s.profit >= 0 ? '+' : ''}{r.s.profit.toFixed(2)}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, fontSize: 11, color: '#A1A1AA' }}>
+                <span>{r.s.count} bet{r.s.count > 1 ? 's' : ''}</span>
+                <span>· {r.s.wins}W-{r.s.losses}L</span>
+                <span>· ROI <span className="mono" style={{ color: r.s.roi >= 0 ? '#4ADE80' : '#F87171', fontWeight: 600 }}>{r.s.roi >= 0 ? '+' : ''}{r.s.roi.toFixed(1)}%</span></span>
+                {r.s.clv != null && (
+                  <span>· CLV <span className="mono" style={{ color: r.s.clv >= 2 ? '#4ADE80' : r.s.clv <= -1 ? '#F87171' : '#A1A1AA', fontWeight: 600 }}>{r.s.clv >= 0 ? '+' : ''}{r.s.clv.toFixed(1)}%</span></span>
+                )}
+                {v && <span style={{ color: v.color, fontWeight: 700 }}>· {v.label}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function AnalyticsView({ bets, currency, onBack }) {
+  const [period, setPeriod] = useState('all');
+
+  const filtered = useMemo(() => {
+    if (period === 'all') return bets;
+    const days = { '7d': 7, '30d': 30, '90d': 90 }[period];
+    if (!days) return bets;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    cutoff.setHours(0, 0, 0, 0);
+    return bets.filter(b => parseLocalDate(b.date) >= cutoff);
+  }, [bets, period]);
+
+  const sportRows = useMemo(() => {
+    const groups = {};
+    filtered.forEach(b => {
+      if (b.status === 'pending') return;
+      const k = b.sport || 'Autre';
+      (groups[k] = groups[k] || []).push(b);
+    });
+    return Object.entries(groups)
+      .map(([k, arr]) => ({ label: k, s: rowStats(arr) }))
+      .sort((a, b) => b.s.profit - a.s.profit);
+  }, [filtered]);
+
+  const marketRows = useMemo(() => {
+    const groups = {};
+    filtered.forEach(b => {
+      if (b.status === 'pending') return;
+      if (!b.marketType) return;
+      (groups[b.marketType] = groups[b.marketType] || []).push(b);
+    });
+    return Object.entries(groups)
+      .map(([k, arr]) => ({ label: MARKET_LABEL[k] || k, s: rowStats(arr) }))
+      .sort((a, b) => b.s.profit - a.s.profit);
+  }, [filtered]);
+
+  const signalRows = useMemo(() => {
+    const groups = {};
+    filtered.forEach(b => {
+      if (b.status === 'pending') return;
+      (b.signals || []).forEach(sig => {
+        (groups[sig] = groups[sig] || []).push(b);
+      });
+    });
+    return Object.entries(groups)
+      .map(([k, arr]) => ({ label: SIGNAL_LABEL[k] || k, s: rowStats(arr) }))
+      .sort((a, b) => b.s.profit - a.s.profit);
+  }, [filtered]);
+
+  const comboRows = useMemo(() => {
+    const groups = {};
+    filtered.forEach(b => {
+      if (b.status === 'pending') return;
+      const sigs = (b.signals || []).slice().sort();
+      if (sigs.length < 2) return;
+      const key = sigs.join(' + ');
+      (groups[key] = groups[key] || []).push(b);
+    });
+    return Object.entries(groups)
+      .map(([k, arr]) => ({ label: k, s: rowStats(arr) }))
+      .filter(r => r.s.count >= 3)
+      .sort((a, b) => b.s.profit - a.s.profit);
+  }, [filtered]);
+
+  const juiceRows = useMemo(() => {
+    const groups = {};
+    filtered.forEach(b => {
+      if (b.status === 'pending') return;
+      const j = juiceCategory(b.odds);
+      if (!j) return;
+      (groups[j.k] = groups[j.k] || { label: j.l, bets: [] }).bets.push(b);
+    });
+    const order = ['plus_money', 'standard', 'premium', 'heavy'];
+    return order
+      .filter(k => groups[k])
+      .map(k => ({ label: groups[k].label, s: rowStats(groups[k].bets) }));
+  }, [filtered]);
+
+  const hourRows = useMemo(() => {
+    const buckets = {
+      morning: { label: 'Matin (avant 12h)', bets: [] },
+      afternoon: { label: 'Après-midi (12h-17h)', bets: [] },
+      evening: { label: 'Soir (17h+)', bets: [] },
+    };
+    filtered.forEach(b => {
+      if (b.status === 'pending' || !b.createdAt) return;
+      const h = new Date(b.createdAt).getHours();
+      if (h < 12) buckets.morning.bets.push(b);
+      else if (h < 17) buckets.afternoon.bets.push(b);
+      else buckets.evening.bets.push(b);
+    });
+    return Object.values(buckets)
+      .filter(b => b.bets.length > 0)
+      .map(b => ({ label: b.label, s: rowStats(b.bets) }));
+  }, [filtered]);
+
+  return (
+    <div className="fade-in">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        {onBack && (
+          <button onClick={onBack} style={{ background: 'transparent', border: '1px solid #2A2A2F', color: '#A1A1AA', width: 36, height: 36, borderRadius: 8, cursor: 'pointer' }}>←</button>
+        )}
+        <h2 className="serif" style={{ margin: 0, fontSize: 28 }}>Analytics</h2>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, padding: 4, background: '#141416', border: '1px solid #222226', borderRadius: 10 }}>
+        {[{ k: '7d', l: '7j' }, { k: '30d', l: '30j' }, { k: '90d', l: '90j' }, { k: 'all', l: 'Tout' }].map(o => (
+          <button key={o.k} onClick={() => setPeriod(o.k)} style={{
+            flex: 1, padding: '8px 4px', borderRadius: 6, fontSize: 12,
+            background: period === o.k ? '#D4A574' : 'transparent',
+            color: period === o.k ? '#0A0A0B' : '#A1A1AA',
+            border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+          }}>{o.l}</button>
+        ))}
+      </div>
+
+      <BreakdownSection title="Par sport" rows={sportRows} currency={currency} />
+      <BreakdownSection title="Par type de marché" rows={marketRows} currency={currency} />
+      <BreakdownSection title="Par signal (isolé)" rows={signalRows} currency={currency} />
+      <BreakdownSection title="Combinaisons (2+ signaux)" rows={comboRows} currency={currency} />
+      <BreakdownSection title="Par catégorie de cote" rows={juiceRows} currency={currency} />
+      <BreakdownSection title="Par heure de placement" rows={hourRows} currency={currency} />
+
+      {filtered.filter(b => b.status !== 'pending').length === 0 && (
+        <div style={{ textAlign: 'center', padding: 40, color: '#71717A' }}>
+          <p style={{ margin: 0, fontSize: 13 }}>Aucun pari réglé sur cette période.</p>
+        </div>
+      )}
     </div>
   );
 }
