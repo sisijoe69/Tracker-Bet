@@ -759,6 +759,102 @@ function avgCLVOf(bets) {
   return xs.reduce((s, v) => s + v, 0) / xs.length;
 }
 
+function roiConfidence(bets) {
+  const settled = bets.filter(b => b.status === 'won' || b.status === 'lost' || b.status === 'push' || b.status === 'void');
+  const realised = settled.filter(b => Number(b.stake) > 0);
+  if (realised.length < 5) return null;
+  const perBetROI = realised.map(b => calcProfit(b.stake, b.odds, b.status) / Number(b.stake));
+  const mean = perBetROI.reduce((s, v) => s + v, 0) / perBetROI.length;
+  const variance = perBetROI.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / Math.max(perBetROI.length - 1, 1);
+  const se = Math.sqrt(variance / perBetROI.length);
+  return {
+    n: realised.length,
+    roi: mean * 100,
+    lower: (mean - 1.96 * se) * 100,
+    upper: (mean + 1.96 * se) * 100,
+    profitable: (mean - 1.96 * se) > 0,
+    inconclusive: (mean - 1.96 * se) <= 0 && (mean + 1.96 * se) >= 0,
+  };
+}
+
+function projectionStats(bets, currentBankroll) {
+  const settled = bets.filter(b => b.status === 'won' || b.status === 'lost');
+  if (settled.length < 5) return null;
+  const dates = bets.map(b => parseLocalDate(b.date).getTime()).filter(Boolean);
+  if (dates.length === 0) return null;
+  const minDate = Math.min(...dates);
+  const maxDate = Math.max(...dates);
+  const spanDays = Math.max(1, (maxDate - minDate) / 86400000 + 1);
+  const totalStaked = settled.reduce((s, b) => s + Number(b.stake || 0), 0);
+  const totalProfit = bets.reduce((s, b) => s + calcProfit(b.stake, b.odds, b.status), 0);
+  const stakedPerDay = totalStaked / spanDays;
+  const actualROI = totalStaked > 0 ? totalProfit / totalStaked : 0;
+  const clv = avgCLVOf(bets);
+  const projectedROI = clv != null ? clv / 100 : actualROI / 2;
+  const perBetROI = settled.map(b => calcProfit(b.stake, b.odds, b.status) / Number(b.stake));
+  const meanROI = perBetROI.reduce((s, v) => s + v, 0) / perBetROI.length;
+  const variance = perBetROI.reduce((s, v) => s + Math.pow(v - meanROI, 2), 0) / Math.max(perBetROI.length - 1, 1);
+  const stdev = Math.sqrt(variance);
+  const avgStake = totalStaked / settled.length;
+  const horizons = [30, 90, 365];
+  return horizons.map(days => {
+    const futureStake = stakedPerDay * days;
+    const futureBets = settled.length > 0 ? (futureStake / avgStake) : 0;
+    const expectedActual = futureStake * actualROI;
+    const expectedProjected = futureStake * projectedROI;
+    const sigma = stdev * Math.sqrt(futureBets) * avgStake;
+    return {
+      days,
+      futureStake,
+      bankrollActual: currentBankroll + expectedActual,
+      bankrollProjected: currentBankroll + expectedProjected,
+      bankrollLow: currentBankroll + expectedProjected - 1.96 * sigma,
+      bankrollHigh: currentBankroll + expectedProjected + 1.96 * sigma,
+    };
+  });
+}
+
+function stakeBucketStats(bets, unitSize) {
+  if (!unitSize || unitSize <= 0) return null;
+  const buckets = [
+    { label: '0.5u – 1.0u', min: 0.5, max: 1.0, bets: [] },
+    { label: '1.0u – 1.5u', min: 1.0, max: 1.5, bets: [] },
+    { label: '1.5u – 2.5u', min: 1.5, max: 2.5, bets: [] },
+    { label: '2.5u +', min: 2.5, max: Infinity, bets: [] },
+  ];
+  bets.forEach(b => {
+    const u = Number(b.stake) / unitSize;
+    const bk = buckets.find(x => u >= x.min && u < x.max);
+    if (bk) bk.bets.push(b);
+  });
+  return buckets.filter(b => b.bets.length > 0).map(b => ({ label: b.label, s: rowStats(b.bets) }));
+}
+
+function chasingStats(bets) {
+  const sorted = bets
+    .filter(b => b.status === 'won' || b.status === 'lost')
+    .slice()
+    .sort((a, b) => {
+      const da = parseLocalDate(a.date) - parseLocalDate(b.date);
+      if (da !== 0) return da;
+      const ca = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const cb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return ca - cb;
+    });
+  if (sorted.length < 10) return null;
+  const afterWin = [], afterLoss = [];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i - 1].status === 'won') afterWin.push(sorted[i]);
+    else if (sorted[i - 1].status === 'lost') afterLoss.push(sorted[i]);
+  }
+  if (afterWin.length < 3 || afterLoss.length < 3) return null;
+  const avgStake = arr => arr.reduce((s, b) => s + Number(b.stake || 0), 0) / arr.length;
+  return {
+    afterWin: { stake: avgStake(afterWin), s: rowStats(afterWin) },
+    afterLoss: { stake: avgStake(afterLoss), s: rowStats(afterLoss) },
+  };
+}
+
 function rowStats(bets) {
   const settled = bets.filter(b => b.status === 'won' || b.status === 'lost');
   const wins = settled.filter(b => b.status === 'won').length;
@@ -814,7 +910,206 @@ function BreakdownSection({ title, rows, currency }) {
   );
 }
 
-export function AnalyticsView({ bets, currency, onBack }) {
+function ROIConfidenceCard({ bets }) {
+  const ci = useMemo(() => roiConfidence(bets), [bets]);
+  if (!ci) return null;
+  const status = ci.profitable
+    ? { label: '✅ Profitable confirmé', color: '#4ADE80' }
+    : ci.inconclusive
+      ? { label: '⏳ Inconclusif (variance)', color: '#D4A574' }
+      : { label: '⚠️ Probablement non profitable', color: '#F87171' };
+  return (
+    <div className="card" style={{ padding: 16, marginBottom: 14 }}>
+      <h3 className="serif" style={{ margin: '0 0 8px 0', fontSize: 18 }}>Confiance sur le ROI</h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+        <span style={{ fontSize: 12, color: '#71717A' }}>ROI mesuré (n={ci.n})</span>
+        <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: ci.roi >= 0 ? '#4ADE80' : '#F87171' }}>
+          {ci.roi >= 0 ? '+' : ''}{ci.roi.toFixed(1)}%
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: '#A1A1AA', marginBottom: 8 }}>
+        Intervalle de confiance 95% :
+        <span className="mono" style={{ color: '#FAFAF9', marginLeft: 6 }}>
+          [{ci.lower >= 0 ? '+' : ''}{ci.lower.toFixed(1)}% à {ci.upper >= 0 ? '+' : ''}{ci.upper.toFixed(1)}%]
+        </span>
+      </div>
+      <div style={{ position: 'relative', height: 8, background: '#1C1C1F', borderRadius: 4, overflow: 'hidden', marginBottom: 8 }}>
+        {(() => {
+          const span = Math.max(50, Math.abs(ci.lower), Math.abs(ci.upper));
+          const left = ((ci.lower + span) / (2 * span)) * 100;
+          const width = ((ci.upper - ci.lower) / (2 * span)) * 100;
+          const zero = (span / (2 * span)) * 100;
+          return <>
+            <div style={{ position: 'absolute', left: `${zero}%`, top: 0, bottom: 0, width: 1, background: '#52525B' }} />
+            <div style={{ position: 'absolute', left: `${left}%`, width: `${width}%`, top: 0, bottom: 0, background: status.color, opacity: 0.6 }} />
+          </>;
+        })()}
+      </div>
+      <div style={{ fontSize: 11, color: status.color, fontWeight: 700 }}>{status.label}</div>
+    </div>
+  );
+}
+
+function CLVProjectionCard({ bets }) {
+  const data = useMemo(() => {
+    const settled = bets.filter(b => b.status === 'won' || b.status === 'lost');
+    if (settled.length < 5) return null;
+    const totalStaked = settled.reduce((s, b) => s + Number(b.stake || 0), 0);
+    const totalProfit = bets.reduce((s, b) => s + calcProfit(b.stake, b.odds, b.status), 0);
+    const actualROI = totalStaked > 0 ? (totalProfit / totalStaked) * 100 : 0;
+    const clv = avgCLVOf(bets);
+    if (clv == null) return null;
+    return { actualROI, projectedROI: clv, gap: actualROI - clv };
+  }, [bets]);
+
+  if (!data) return null;
+
+  const verdict = data.gap > 10
+    ? { label: '⚠️ Variance positive importante — régression attendue', color: '#F87171' }
+    : data.gap < -10
+      ? { label: '🍀 Variance négative — tu sous-performes ton edge', color: '#D4A574' }
+      : { label: '✅ Performance alignée avec edge réel', color: '#4ADE80' };
+
+  return (
+    <div className="card" style={{ padding: 16, marginBottom: 14 }}>
+      <h3 className="serif" style={{ margin: '0 0 12px 0', fontSize: 18 }}>Projection long-terme</h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #1F1F22' }}>
+        <span style={{ fontSize: 12, color: '#71717A' }}>ROI actuel</span>
+        <span className="mono" style={{ fontSize: 14, fontWeight: 700, color: data.actualROI >= 0 ? '#4ADE80' : '#F87171' }}>
+          {data.actualROI >= 0 ? '+' : ''}{data.actualROI.toFixed(1)}%
+        </span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #1F1F22' }}>
+        <span style={{ fontSize: 12, color: '#71717A' }}>ROI projeté (CLV)</span>
+        <span className="mono" style={{ fontSize: 14, fontWeight: 700, color: data.projectedROI >= 0 ? '#4ADE80' : '#F87171' }}>
+          {data.projectedROI >= 0 ? '+' : ''}{data.projectedROI.toFixed(1)}%
+        </span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
+        <span style={{ fontSize: 12, color: '#71717A' }}>Variance (actuel − projeté)</span>
+        <span className="mono" style={{ fontSize: 14, fontWeight: 700, color: Math.abs(data.gap) <= 5 ? '#4ADE80' : '#D4A574' }}>
+          {data.gap >= 0 ? '+' : ''}{data.gap.toFixed(1)}%
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: verdict.color, fontWeight: 700, marginTop: 8 }}>
+        {verdict.label}
+      </div>
+    </div>
+  );
+}
+
+function StakeSizeCard({ bets, unitSize }) {
+  const rows = useMemo(() => stakeBucketStats(bets, unitSize), [bets, unitSize]);
+  if (!rows || rows.length === 0) return null;
+  return (
+    <div className="card" style={{ padding: 16, marginBottom: 14 }}>
+      <h3 className="serif" style={{ margin: '0 0 4px 0', fontSize: 18 }}>Performance par taille de mise</h3>
+      <p style={{ fontSize: 11, color: '#71717A', margin: '0 0 12px 0' }}>
+        Détecte le tilt sur grosses mises : si le bucket 2.5u+ est rouge, tu perds sur tes "lock plays".
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {rows.map(r => (
+          <div key={r.label} style={{ padding: '8px 10px', background: '#0A0A0B', border: '1px solid #1F1F22', borderRadius: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>{r.label}</span>
+              <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: r.s.profit >= 0 ? '#4ADE80' : '#F87171' }}>
+                {r.s.profit >= 0 ? '+' : ''}{r.s.profit.toFixed(2)}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, fontSize: 11, color: '#A1A1AA' }}>
+              <span>{r.s.count} bets</span>
+              <span>· {r.s.wins}W-{r.s.losses}L</span>
+              <span>· ROI <span className="mono" style={{ color: r.s.roi >= 0 ? '#4ADE80' : '#F87171', fontWeight: 600 }}>{r.s.roi >= 0 ? '+' : ''}{r.s.roi.toFixed(1)}%</span></span>
+              {r.s.clv != null && <span>· CLV <span className="mono" style={{ color: r.s.clv >= 0 ? '#4ADE80' : '#F87171', fontWeight: 600 }}>{r.s.clv >= 0 ? '+' : ''}{r.s.clv.toFixed(1)}%</span></span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChasingCard({ bets, currency }) {
+  const c = useMemo(() => chasingStats(bets), [bets]);
+  if (!c) return null;
+  const stakeBump = c.afterWin.stake > 0 ? ((c.afterLoss.stake - c.afterWin.stake) / c.afterWin.stake) * 100 : 0;
+  const isChasing = stakeBump > 15;
+  return (
+    <div className="card" style={{ padding: 16, marginBottom: 14 }}>
+      <h3 className="serif" style={{ margin: '0 0 4px 0', fontSize: 18 }}>Comportement post-résultat</h3>
+      <p style={{ fontSize: 11, color: '#71717A', margin: '0 0 12px 0' }}>
+        Détecte le chasing : augmenter ses mises après une perte est statistiquement -EV.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div style={{ padding: 10, background: '#0A0A0B', border: '1px solid #1F1F22', borderRadius: 8 }}>
+          <div style={{ fontSize: 10, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 4 }}>Après WIN</div>
+          <div className="mono" style={{ fontSize: 14, fontWeight: 700 }}>{c.afterWin.stake.toFixed(2)} {currency}</div>
+          <div style={{ fontSize: 11, color: c.afterWin.s.roi >= 0 ? '#4ADE80' : '#F87171', marginTop: 4 }}>
+            ROI {c.afterWin.s.roi >= 0 ? '+' : ''}{c.afterWin.s.roi.toFixed(1)}% ({c.afterWin.s.count})
+          </div>
+        </div>
+        <div style={{ padding: 10, background: '#0A0A0B', border: `1px solid ${isChasing ? '#F87171' : '#1F1F22'}`, borderRadius: 8 }}>
+          <div style={{ fontSize: 10, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 4 }}>Après LOSS</div>
+          <div className="mono" style={{ fontSize: 14, fontWeight: 700, color: isChasing ? '#F87171' : '#FAFAF9' }}>
+            {c.afterLoss.stake.toFixed(2)} {currency}
+            {stakeBump !== 0 && <span style={{ fontSize: 10, marginLeft: 4 }}>({stakeBump >= 0 ? '+' : ''}{stakeBump.toFixed(0)}%)</span>}
+          </div>
+          <div style={{ fontSize: 11, color: c.afterLoss.s.roi >= 0 ? '#4ADE80' : '#F87171', marginTop: 4 }}>
+            ROI {c.afterLoss.s.roi >= 0 ? '+' : ''}{c.afterLoss.s.roi.toFixed(1)}% ({c.afterLoss.s.count})
+          </div>
+        </div>
+      </div>
+      {isChasing && (
+        <div style={{ fontSize: 11, color: '#F87171', fontWeight: 700, marginTop: 10, padding: 8, background: '#2A1A1A', borderRadius: 6 }}>
+          ⚠️ CHASING DÉTECTÉ — mise augmentée de {stakeBump.toFixed(0)}% après perte
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProjectionCard({ bets, currentBankroll, currency }) {
+  const horizons = useMemo(() => projectionStats(bets, currentBankroll), [bets, currentBankroll]);
+  if (!horizons) return null;
+  return (
+    <div className="card" style={{ padding: 16, marginBottom: 14 }}>
+      <h3 className="serif" style={{ margin: '0 0 4px 0', fontSize: 18 }}>Projection bankroll</h3>
+      <p style={{ fontSize: 11, color: '#71717A', margin: '0 0 12px 0' }}>
+        À ton rythme actuel, projeté avec ton ROI réel et ton ROI projeté CLV (long-terme attendu) ± variance 95%.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {horizons.map(h => (
+          <div key={h.days} style={{ padding: 10, background: '#0A0A0B', border: '1px solid #1F1F22', borderRadius: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>+{h.days} jours</span>
+              <span style={{ fontSize: 10, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.1em' }}>{h.futureStake.toFixed(0)} {currency} misés</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '3px 0' }}>
+              <span style={{ color: '#71717A' }}>Si rythme actuel</span>
+              <span className="mono" style={{ fontWeight: 600, color: h.bankrollActual >= currentBankroll ? '#4ADE80' : '#F87171' }}>
+                {h.bankrollActual.toFixed(0)} {currency}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '3px 0' }}>
+              <span style={{ color: '#71717A' }}>Projeté CLV (réaliste)</span>
+              <span className="mono" style={{ fontWeight: 600, color: h.bankrollProjected >= currentBankroll ? '#4ADE80' : '#F87171' }}>
+                {h.bankrollProjected.toFixed(0)} {currency}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '3px 0', color: '#52525B' }}>
+              <span>Range 95%</span>
+              <span className="mono">
+                [{h.bankrollLow.toFixed(0)} → {h.bankrollHigh.toFixed(0)}]
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function AnalyticsView({ bets, currency, currentBankroll, unitSize, onBack }) {
   const [period, setPeriod] = useState('all');
 
   const filtered = useMemo(() => {
@@ -931,6 +1226,14 @@ export function AnalyticsView({ bets, currency, onBack }) {
         ))}
       </div>
 
+      <h3 className="serif" style={{ fontSize: 16, color: '#D4A574', margin: '0 0 8px 0', textTransform: 'uppercase', letterSpacing: '.1em' }}>Anti-tilt &amp; projection</h3>
+      <ROIConfidenceCard bets={filtered} />
+      <CLVProjectionCard bets={filtered} />
+      <ProjectionCard bets={filtered} currentBankroll={currentBankroll} currency={currency} />
+      <StakeSizeCard bets={filtered} unitSize={unitSize} />
+      <ChasingCard bets={filtered} currency={currency} />
+
+      <h3 className="serif" style={{ fontSize: 16, color: '#D4A574', margin: '20px 0 8px 0', textTransform: 'uppercase', letterSpacing: '.1em' }}>Breakdowns</h3>
       <BreakdownSection title="Par sport" rows={sportRows} currency={currency} />
       <BreakdownSection title="Par type de marché" rows={marketRows} currency={currency} />
       <BreakdownSection title="Par signal (isolé)" rows={signalRows} currency={currency} />
