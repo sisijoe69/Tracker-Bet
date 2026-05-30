@@ -60,6 +60,21 @@ export const SIGNALS = [
   { k: 'value_play', l: 'value_play' },
 ];
 
+export const GRADES = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-'];
+
+export function gradeColor(g) {
+  if (!g) return '#71717A';
+  if (g.startsWith('A')) return '#4ADE80';
+  if (g.startsWith('B')) return '#D4A574';
+  if (g.startsWith('C')) return '#F87171';
+  return '#71717A';
+}
+
+export function gradeRank(g) {
+  const i = GRADES.indexOf(g);
+  return i < 0 ? 99 : i;
+}
+
 export function juiceCategory(odds) {
   const o = Number(odds);
   if (!o || isNaN(o)) return null;

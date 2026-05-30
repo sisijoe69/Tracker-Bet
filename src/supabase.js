@@ -79,6 +79,7 @@ const betFromRow = (r) => ({
   closingOdds: r.closing_odds == null ? null : Number(r.closing_odds),
   marketType: r.market_type || null,
   signals: Array.isArray(r.signals) ? r.signals : [],
+  grade: r.grade || null,
   createdAt: r.created_at || null,
 });
 
@@ -97,6 +98,7 @@ const betToRow = (b, userId) => ({
   closing_odds: b.closingOdds == null || b.closingOdds === '' ? null : Number(b.closingOdds),
   market_type: b.marketType || null,
   signals: Array.isArray(b.signals) ? b.signals : [],
+  grade: b.grade || null,
 });
 
 export async function loadUserData(userId) {

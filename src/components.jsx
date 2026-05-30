@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Download, ChevronLeft, ChevronRight, LogOut, Flame, Trophy, TrendingUp, TrendingDown } from 'lucide-react';
-import { calcProfit, formatOdds, parseLocalDate, juiceCategory, calcCLV, MARKET_TYPES, SIGNALS } from './utils.js';
+import { calcProfit, formatOdds, parseLocalDate, juiceCategory, calcCLV, MARKET_TYPES, SIGNALS, GRADES, gradeColor, gradeRank } from './utils.js';
 
 const MARKET_LABEL = Object.fromEntries(MARKET_TYPES.map(m => [m.k, m.l]));
 const SIGNAL_LABEL = Object.fromEntries(SIGNALS.map(s => [s.k, s.l]));
@@ -285,8 +285,13 @@ export function BetCard({ bet, currency, onUpdate, onDelete, onEdit }) {
             })()}</>
           )}
         </div>
-        {(bet.marketType || (bet.signals && bet.signals.length > 0)) && (
+        {(bet.marketType || bet.grade || (bet.signals && bet.signals.length > 0)) && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+            {bet.grade && (
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 3, background: gradeColor(bet.grade), color: '#0A0A0B', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, letterSpacing: '.02em' }}>
+                {bet.grade}
+              </span>
+            )}
             {bet.marketType && (
               <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: '#1C1C1F', border: '1px solid #2A2A2F', color: '#D4A574', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>
                 {MARKET_LABEL[bet.marketType] || bet.marketType}
@@ -1174,6 +1179,18 @@ export function AnalyticsView({ bets, currency, currentBankroll, unitSize, onBac
       .sort((a, b) => b.s.profit - a.s.profit);
   }, [filtered]);
 
+  const gradeRows = useMemo(() => {
+    const groups = {};
+    filtered.forEach(b => {
+      if (b.status === 'pending') return;
+      if (!b.grade) return;
+      (groups[b.grade] = groups[b.grade] || []).push(b);
+    });
+    return Object.entries(groups)
+      .map(([k, arr]) => ({ label: k, s: rowStats(arr), _rank: gradeRank(k) }))
+      .sort((a, b) => a._rank - b._rank);
+  }, [filtered]);
+
   const juiceRows = useMemo(() => {
     const groups = {};
     filtered.forEach(b => {
@@ -1235,6 +1252,7 @@ export function AnalyticsView({ bets, currency, currentBankroll, unitSize, onBac
 
       <h3 className="serif" style={{ fontSize: 16, color: '#D4A574', margin: '20px 0 8px 0', textTransform: 'uppercase', letterSpacing: '.1em' }}>Breakdowns</h3>
       <BreakdownSection title="Par sport" rows={sportRows} currency={currency} />
+      <BreakdownSection title="Par note (calibration)" rows={gradeRows} currency={currency} />
       <BreakdownSection title="Par type de marché" rows={marketRows} currency={currency} />
       <BreakdownSection title="Par signal (isolé)" rows={signalRows} currency={currency} />
       <BreakdownSection title="Combinaisons (2+ signaux)" rows={comboRows} currency={currency} />
