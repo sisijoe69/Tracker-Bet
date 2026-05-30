@@ -88,7 +88,9 @@ export default function App() {
   const stats = useMemo(() => {
     const { settings } = data;
     const bets = filteredBets;
-    const unitSize = (settings.initialBankroll * settings.unitSizePercent) / 100;
+    const bankroll = settings.initialBankroll + allTimeProfit;
+    const unitBase = settings.rollingUnit ? bankroll : settings.initialBankroll;
+    const unitSize = (unitBase * settings.unitSizePercent) / 100;
     const settled = bets.filter(b => b.status === 'won' || b.status === 'lost');
     const wins = bets.filter(b => b.status === 'won').length;
     const losses = bets.filter(b => b.status === 'lost').length;
@@ -96,7 +98,6 @@ export default function App() {
     const pending = bets.filter(b => b.status === 'pending').length;
     const totalStaked = settled.reduce((s, b) => s + Number(b.stake || 0), 0);
     const periodProfit = bets.reduce((s, b) => s + calcProfit(b.stake, b.odds, b.status), 0);
-    const bankroll = settings.initialBankroll + allTimeProfit;
     const roi = totalStaked > 0 ? (periodProfit / totalStaked) * 100 : 0;
     const winRate = wins + losses > 0 ? (wins / (wins + losses)) * 100 : 0;
     const unitsUp = unitSize > 0 ? periodProfit / unitSize : 0;
@@ -384,6 +385,7 @@ export default function App() {
           <SettingsView
             data={data}
             displayName={data.settings.displayName || session.user.email}
+            currentBankroll={stats.bankroll}
             onUpdate={updateSettings}
             onReset={resetAll}
             onExport={exportData}

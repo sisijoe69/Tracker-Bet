@@ -117,6 +117,7 @@ export async function loadUserData(userId) {
         unitSizePercent: Number(p?.unit_size_percent ?? 1),
         currency: p?.currency ?? 'CAD',
         displayName: p?.display_name ?? '',
+        rollingUnit: !!p?.rolling_unit,
       },
       bets: (betsRes.data || []).map(betFromRow),
     };
@@ -130,6 +131,7 @@ export async function updateProfile(userId, settings) {
       initial_bankroll: Number(settings.initialBankroll),
       unit_size_percent: Number(settings.unitSizePercent),
       currency: settings.currency,
+      rolling_unit: !!settings.rollingUnit,
     });
     if (error) throw error;
   });
