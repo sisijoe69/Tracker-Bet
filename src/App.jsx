@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Plus, Target, Settings as SettingsIcon, List, Home, AlertCircle, Calendar } from 'lucide-react';
 import {
-  DEFAULT_DATA, SPORT_LEAGUES, BET_TYPES, MARKET_TYPES, SIGNALS,
+  DEFAULT_DATA, SPORT_LEAGUES, BET_TYPES, MARKET_TYPES, SIGNALS, GRADES,
   fetchESPNGames, calcParlayOdds, calcProfit, oddsToImplied, formatOdds,
-  localDateString, parseLocalDate, juiceCategory, calcCLV,
+  localDateString, parseLocalDate, juiceCategory, calcCLV, gradeColor,
 } from './utils.js';
 import { StatCard, HistoryView, SettingsView, CalendarView, renderGames, PeriodFilter, AdvancedStats, BetTypeBreakdown, CLVCard, AnalyticsView } from './components.jsx';
 import AuthScreen from './AuthScreen.jsx';
@@ -88,7 +88,9 @@ export default function App() {
   const stats = useMemo(() => {
     const { settings } = data;
     const bets = filteredBets;
-    const unitSize = (settings.initialBankroll * settings.unitSizePercent) / 100;
+    const bankroll = settings.initialBankroll + allTimeProfit;
+    const unitBase = settings.rollingUnit ? bankroll : settings.initialBankroll;
+    const unitSize = (unitBase * settings.unitSizePercent) / 100;
     const settled = bets.filter(b => b.status === 'won' || b.status === 'lost');
     const wins = bets.filter(b => b.status === 'won').length;
     const losses = bets.filter(b => b.status === 'lost').length;
@@ -96,7 +98,6 @@ export default function App() {
     const pending = bets.filter(b => b.status === 'pending').length;
     const totalStaked = settled.reduce((s, b) => s + Number(b.stake || 0), 0);
     const periodProfit = bets.reduce((s, b) => s + calcProfit(b.stake, b.odds, b.status), 0);
-    const bankroll = settings.initialBankroll + allTimeProfit;
     const roi = totalStaked > 0 ? (periodProfit / totalStaked) * 100 : 0;
     const winRate = wins + losses > 0 ? (wins / (wins + losses)) * 100 : 0;
     const unitsUp = unitSize > 0 ? periodProfit / unitSize : 0;
@@ -384,6 +385,7 @@ export default function App() {
           <SettingsView
             data={data}
             displayName={data.settings.displayName || session.user.email}
+            currentBankroll={stats.bankroll}
             onUpdate={updateSettings}
             onReset={resetAll}
             onExport={exportData}
@@ -462,6 +464,7 @@ function AddBetModal({ onAdd, onClose, unitSize, currency, editingBet, defaultDa
         closingOdds: editingBet.closingOdds == null ? '' : String(editingBet.closingOdds),
         marketType: editingBet.marketType || '',
         signals: Array.isArray(editingBet.signals) ? editingBet.signals : [],
+        grade: editingBet.grade || '',
       };
     }
     return {
@@ -478,6 +481,7 @@ function AddBetModal({ onAdd, onClose, unitSize, currency, editingBet, defaultDa
       closingOdds: '',
       marketType: '',
       signals: [],
+      grade: '',
     };
   });
 
@@ -708,6 +712,31 @@ function AddBetModal({ onAdd, onClose, unitSize, currency, editingBet, defaultDa
                           transition: 'all .12s',
                         }}
                       >{s.l}</button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Note du pari (style Action Network)</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {GRADES.map(g => {
+                    const on = form.grade === g;
+                    const color = gradeColor(g);
+                    return (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, grade: f.grade === g ? '' : g }))}
+                        style={{
+                          padding: '8px 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+                          background: on ? color : 'transparent',
+                          color: on ? '#0A0A0B' : color,
+                          border: `1px solid ${color}`,
+                          fontFamily: 'JetBrains Mono, monospace', fontWeight: 700,
+                          transition: 'all .12s', minWidth: 48,
+                        }}
+                      >{g}</button>
                     );
                   })}
                 </div>

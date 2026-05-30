@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Download, ChevronLeft, ChevronRight, LogOut, Flame, Trophy, TrendingUp, TrendingDown } from 'lucide-react';
-import { calcProfit, formatOdds, parseLocalDate, juiceCategory, calcCLV, MARKET_TYPES, SIGNALS } from './utils.js';
+import { calcProfit, formatOdds, parseLocalDate, juiceCategory, calcCLV, MARKET_TYPES, SIGNALS, GRADES, gradeColor, gradeRank } from './utils.js';
 
 const MARKET_LABEL = Object.fromEntries(MARKET_TYPES.map(m => [m.k, m.l]));
 const SIGNAL_LABEL = Object.fromEntries(SIGNALS.map(s => [s.k, s.l]));
@@ -206,34 +206,107 @@ export function StatCard({ label, value, accent }) {
 
 export function HistoryView({ bets, currency, onUpdate, onDelete, onEdit }) {
   const [filter, setFilter] = useState('all');
-  const filtered = bets.filter(b => filter === 'all' || b.status === filter);
+  const [query, setQuery] = useState('');
+  const [sportFilter, setSportFilter] = useState([]);
+  const [signalFilter, setSignalFilter] = useState([]);
+  const [gradeFilter, setGradeFilter] = useState([]);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+
+  const sportsAvailable = useMemo(() => {
+    const set = new Set(bets.map(b => b.sport).filter(Boolean));
+    return Array.from(set).sort();
+  }, [bets]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return bets.filter(b => {
+      if (filter !== 'all' && b.status !== filter) return false;
+      if (sportFilter.length > 0 && !sportFilter.includes(b.sport)) return false;
+      if (signalFilter.length > 0 && !signalFilter.some(s => (b.signals || []).includes(s))) return false;
+      if (gradeFilter.length > 0 && !gradeFilter.includes(b.grade)) return false;
+      if (q) {
+        const hay = `${b.description || ''} ${b.match || ''} ${b.notes || ''} ${b.sport || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [bets, filter, query, sportFilter, signalFilter, gradeFilter]);
+
   const statusLabels = { all: 'Tous', pending: 'En attente', won: 'Gagnés', lost: 'Perdus', push: 'Poussée' };
+  const toggle = (arr, setArr, k) => setArr(arr.includes(k) ? arr.filter(x => x !== k) : [...arr, k]);
+  const activeFilters = sportFilter.length + signalFilter.length + gradeFilter.length;
+
+  const chipStyle = (on, color = '#D4A574') => ({
+    padding: '6px 10px', borderRadius: 16, fontSize: 11, cursor: 'pointer',
+    background: on ? color : 'transparent',
+    color: on ? '#0A0A0B' : '#A1A1AA',
+    border: `1px solid ${on ? color : '#2A2A2F'}`,
+    fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap',
+  });
 
   return (
     <div className="fade-in">
       <h2 className="serif" style={{ margin: '0 0 16px 0', fontSize: 28 }}>Historique</h2>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
+
+      <input
+        className="input"
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        placeholder="🔍 Rechercher (description, match, notes...)"
+        style={{ marginBottom: 12 }}
+      />
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, overflowX: 'auto', paddingBottom: 4 }}>
         {Object.entries(statusLabels).map(([k, v]) => (
-          <button
-            key={k} onClick={() => setFilter(k)}
-            style={{
-              padding: '6px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-              background: filter === k ? '#D4A574' : 'transparent',
-              color: filter === k ? '#0A0A0B' : '#A1A1AA',
-              border: `1px solid ${filter === k ? '#D4A574' : '#2A2A2F'}`,
-              fontFamily: 'inherit', whiteSpace: 'nowrap',
-            }}
-          >{v}</button>
+          <button key={k} onClick={() => setFilter(k)} style={chipStyle(filter === k)}>{v}</button>
         ))}
       </div>
+
+      {sportsAvailable.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, overflowX: 'auto', paddingBottom: 4 }}>
+          {sportsAvailable.map(s => (
+            <button key={s} onClick={() => toggle(sportFilter, setSportFilter, s)} style={chipStyle(sportFilter.includes(s))}>{s}</button>
+          ))}
+        </div>
+      )}
+
+      <button
+        onClick={() => setShowMoreFilters(!showMoreFilters)}
+        style={{ background: 'transparent', border: 'none', color: '#A1A1AA', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 600, marginBottom: 12, padding: 0 }}
+      >
+        {showMoreFilters ? '− Moins de filtres' : `+ Plus de filtres${activeFilters > 0 ? ` (${activeFilters} actifs)` : ''}`}
+      </button>
+
+      {showMoreFilters && (
+        <div style={{ marginBottom: 16, padding: 12, background: '#0A0A0B', border: '1px solid #1F1F22', borderRadius: 8 }}>
+          <div style={{ fontSize: 10, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 600, marginBottom: 6 }}>Notes</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 12 }}>
+            {GRADES.map(g => (
+              <button key={g} onClick={() => toggle(gradeFilter, setGradeFilter, g)} style={chipStyle(gradeFilter.includes(g), gradeColor(g))}>{g}</button>
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 600, marginBottom: 6 }}>Signaux</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {SIGNALS.map(s => (
+              <button key={s.k} onClick={() => toggle(signalFilter, setSignalFilter, s.k)} style={chipStyle(signalFilter.includes(s.k))}>{s.l}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40, color: '#71717A', fontSize: 13 }}>
-          Aucun pari dans cette catégorie.
+          Aucun pari ne correspond aux filtres.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {filtered.map(b => <BetCard key={b.id} bet={b} currency={currency} onUpdate={onUpdate} onDelete={onDelete} onEdit={onEdit} />)}
-        </div>
+        <>
+          <div style={{ fontSize: 11, color: '#71717A', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '.1em' }}>
+            {filtered.length} pari{filtered.length > 1 ? 's' : ''}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {filtered.map(b => <BetCard key={b.id} bet={b} currency={currency} onUpdate={onUpdate} onDelete={onDelete} onEdit={onEdit} />)}
+          </div>
+        </>
       )}
     </div>
   );
@@ -285,8 +358,13 @@ export function BetCard({ bet, currency, onUpdate, onDelete, onEdit }) {
             })()}</>
           )}
         </div>
-        {(bet.marketType || (bet.signals && bet.signals.length > 0)) && (
+        {(bet.marketType || bet.grade || (bet.signals && bet.signals.length > 0)) && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+            {bet.grade && (
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 3, background: gradeColor(bet.grade), color: '#0A0A0B', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, letterSpacing: '.02em' }}>
+                {bet.grade}
+              </span>
+            )}
             {bet.marketType && (
               <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: '#1C1C1F', border: '1px solid #2A2A2F', color: '#D4A574', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 600 }}>
                 {MARKET_LABEL[bet.marketType] || bet.marketType}
@@ -372,7 +450,7 @@ export function renderGames(games, gamesError, form, setForm, setShowGamesList) 
   );
 }
 
-export function SettingsView({ data, displayName, onUpdate, onReset, onExport, onImport, onLogout }) {
+export function SettingsView({ data, displayName, currentBankroll, onUpdate, onReset, onExport, onImport, onLogout }) {
   const [local, setLocal] = useState(data.settings);
 
   const save = () => {
@@ -380,11 +458,13 @@ export function SettingsView({ data, displayName, onUpdate, onReset, onExport, o
       initialBankroll: Number(local.initialBankroll),
       unitSizePercent: Number(local.unitSizePercent),
       currency: local.currency,
+      rollingUnit: !!local.rollingUnit,
     });
     alert('Paramètres sauvegardés.');
   };
 
-  const unitValue = (local.initialBankroll * local.unitSizePercent) / 100;
+  const unitBase = local.rollingUnit ? Number(currentBankroll || local.initialBankroll) : Number(local.initialBankroll);
+  const unitValue = (unitBase * local.unitSizePercent) / 100;
 
   return (
     <div className="fade-in">
@@ -420,7 +500,33 @@ export function SettingsView({ data, displayName, onUpdate, onReset, onExport, o
           <input className="input mono" type="number" step="0.1" value={local.unitSizePercent} onChange={e => setLocal({ ...local, unitSizePercent: e.target.value })} />
           <div style={{ fontSize: 11, color: '#D4A574', marginTop: 6 }} className="mono">
             1 unité = {unitValue.toFixed(2)} {local.currency}
+            {local.rollingUnit && <span style={{ color: '#71717A', marginLeft: 6 }}>(bankroll actuel)</span>}
           </div>
+        </div>
+
+        <div style={{ marginBottom: 14, padding: 12, background: '#0A0A0B', border: '1px solid #2A2A2F', borderRadius: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Unité roulante</div>
+            <button
+              type="button"
+              onClick={() => setLocal({ ...local, rollingUnit: !local.rollingUnit })}
+              style={{
+                width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer',
+                background: local.rollingUnit ? '#4ADE80' : '#2A2A2F',
+                position: 'relative', transition: 'all .15s', padding: 0,
+              }}
+            >
+              <span style={{
+                position: 'absolute', top: 2, left: local.rollingUnit ? 22 : 2,
+                width: 20, height: 20, borderRadius: '50%', background: '#FAFAF9', transition: 'left .15s',
+              }} />
+            </button>
+          </div>
+          <p style={{ fontSize: 11, color: '#71717A', margin: 0, lineHeight: 1.5 }}>
+            {local.rollingUnit
+              ? '✅ Ton unité grandit avec ton bankroll. Recommandé pour compounder ton edge.'
+              : '⚠️ Unité fixée au bankroll de départ. Tu sous-stakes après chaque hausse.'}
+          </p>
         </div>
 
         <div style={{ marginBottom: 16 }}>
@@ -1174,6 +1280,38 @@ export function AnalyticsView({ bets, currency, currentBankroll, unitSize, onBac
       .sort((a, b) => b.s.profit - a.s.profit);
   }, [filtered]);
 
+  const gradeRows = useMemo(() => {
+    const groups = {};
+    filtered.forEach(b => {
+      if (b.status === 'pending') return;
+      if (!b.grade) return;
+      (groups[b.grade] = groups[b.grade] || []).push(b);
+    });
+    return Object.entries(groups)
+      .map(([k, arr]) => ({ label: k, s: rowStats(arr), _rank: gradeRank(k) }))
+      .sort((a, b) => a._rank - b._rank);
+  }, [filtered]);
+
+  const monthlyRows = useMemo(() => {
+    const groups = {};
+    filtered.forEach(b => {
+      if (b.status === 'pending') return;
+      const d = parseLocalDate(b.date);
+      if (isNaN(d.getTime())) return;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      (groups[key] = groups[key] || []).push(b);
+    });
+    const rows = Object.entries(groups)
+      .map(([k, arr]) => {
+        const [y, m] = k.split('-');
+        const dt = new Date(Number(y), Number(m) - 1, 1);
+        const label = dt.toLocaleDateString('fr-CA', { year: 'numeric', month: 'long' });
+        return { label: label.charAt(0).toUpperCase() + label.slice(1), key: k, s: rowStats(arr) };
+      })
+      .sort((a, b) => b.key.localeCompare(a.key));
+    return rows;
+  }, [filtered]);
+
   const juiceRows = useMemo(() => {
     const groups = {};
     filtered.forEach(b => {
@@ -1234,7 +1372,9 @@ export function AnalyticsView({ bets, currency, currentBankroll, unitSize, onBac
       <ChasingCard bets={filtered} currency={currency} />
 
       <h3 className="serif" style={{ fontSize: 16, color: '#D4A574', margin: '20px 0 8px 0', textTransform: 'uppercase', letterSpacing: '.1em' }}>Breakdowns</h3>
+      <BreakdownSection title="Par mois" rows={monthlyRows} currency={currency} />
       <BreakdownSection title="Par sport" rows={sportRows} currency={currency} />
+      <BreakdownSection title="Par note (calibration)" rows={gradeRows} currency={currency} />
       <BreakdownSection title="Par type de marché" rows={marketRows} currency={currency} />
       <BreakdownSection title="Par signal (isolé)" rows={signalRows} currency={currency} />
       <BreakdownSection title="Combinaisons (2+ signaux)" rows={comboRows} currency={currency} />
